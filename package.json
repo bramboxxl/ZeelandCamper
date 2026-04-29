@@ -1,0 +1,13 @@
+{
+  "name": "zeelandcamper-site",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ZeelandCamper website with a simple protected dashboard.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

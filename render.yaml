@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: zeelandcamper-site
+    env: node
+    plan: free
+    buildCommand: ""
+    startCommand: npm start
+    envVars:
+      - key: SITE_USERNAME
+        value: bram
+      - key: SITE_PASSWORD
+        value: "1234"
+      - key: SESSION_SECRET
+        generateValue: true

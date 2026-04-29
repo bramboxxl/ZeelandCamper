@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="nl">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Login | ZeelandCamper</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script defer src="/login.js"></script>
+  </head>
+  <body class="login-page">
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="ZeelandCamper home">
+        <img src="/assets/logo-zeelandcamper-web.jpg" alt="ZeelandCamper">
+      </a>
+      <nav class="top-nav" aria-label="Hoofdnavigatie">
+        <a href="/">Home</a>
+      </nav>
+    </header>
+
+    <main class="auth-shell">
+      <section class="auth-card" aria-labelledby="login-title">
+        <p class="eyebrow">Beheer</p>
+        <h1 id="login-title">Inloggen</h1>
+        <form id="login-form">
+          <label>
+            Gebruikersnaam
+            <input type="text" name="username" autocomplete="username" required>
+          </label>
+          <label>
+            Wachtwoord
+            <input type="password" name="password" autocomplete="current-password" required>
+          </label>
+          <button class="primary-button" type="submit">Login</button>
+          <p class="form-message" id="login-message" role="status"></p>
+        </form>
+      </section>
+    </main>
+  </body>
+</html>
