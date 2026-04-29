@@ -1,0 +1,26 @@
+[
+  {
+    "id": "demo-hymer-001",
+    "title": "Hymer compacte camper",
+    "brand": "Hymer",
+    "model": "Compact",
+    "year": "2018",
+    "mileage": "64000",
+    "price": "54950",
+    "status": "Te koop",
+    "description": "Nette compacte camper met praktische indeling en aflevercontrole.",
+    "imageUrl": ""
+  },
+  {
+    "id": "demo-burstner-001",
+    "title": "Burstner half-integraal",
+    "brand": "Burstner",
+    "model": "Travel Van",
+    "year": "2020",
+    "mileage": "42000",
+    "price": "68950",
+    "status": "Binnenkort",
+    "description": "Comfortabele half-integraal met veel bergruimte en lichte afwerking.",
+    "imageUrl": ""
+  }
+]

@@ -21,25 +21,82 @@
     <main class="dashboard-shell">
       <section class="dashboard-hero">
         <p class="eyebrow">Dashboard</p>
-        <h1>Welkom bij ZeelandCamper beheer</h1>
-        <p>Hier kunnen we straks campers, contactaanvragen en pagina-inhoud beheren.</p>
+        <h1>Voertuigen beheren</h1>
+        <p>Voeg campers en voertuigen toe voor het openbare aanbod op de website.</p>
       </section>
-      <section class="dashboard-grid">
-        <article class="dashboard-card">
-          <span class="stat">0</span>
-          <h2>Campers online</h2>
-          <p>De voorraadmodule is klaar om als volgende stap uit te werken.</p>
-        </article>
-        <article class="dashboard-card">
-          <span class="stat">0</span>
-          <h2>Nieuwe aanvragen</h2>
-          <p>Contactformulieren kunnen later veilig aan dit dashboard worden gekoppeld.</p>
-        </article>
-        <article class="dashboard-card">
-          <span class="stat">3</span>
-          <h2>Diensten</h2>
-          <p>Occasions, makelaardij en recreatie service staan op de homepage.</p>
-        </article>
+
+      <section class="admin-layout">
+        <form class="vehicle-form" id="vehicle-form">
+          <input type="hidden" name="id">
+          <div class="form-header">
+            <div>
+              <p class="eyebrow">Database</p>
+              <h2 id="form-title">Voertuig toevoegen</h2>
+            </div>
+            <button class="secondary-button small-button" id="reset-form" type="button">Nieuw</button>
+          </div>
+
+          <label>
+            Titel
+            <input type="text" name="title" placeholder="Bijv. Hymer B-Klasse" required>
+          </label>
+          <div class="form-row">
+            <label>
+              Merk
+              <input type="text" name="brand" placeholder="Hymer">
+            </label>
+            <label>
+              Model
+              <input type="text" name="model" placeholder="B-Klasse">
+            </label>
+          </div>
+          <div class="form-row">
+            <label>
+              Bouwjaar
+              <input type="text" name="year" inputmode="numeric" placeholder="2020">
+            </label>
+            <label>
+              Kilometerstand
+              <input type="text" name="mileage" inputmode="numeric" placeholder="42000">
+            </label>
+          </div>
+          <div class="form-row">
+            <label>
+              Prijs
+              <input type="text" name="price" inputmode="numeric" placeholder="68950">
+            </label>
+            <label>
+              Status
+              <select name="status">
+                <option>Te koop</option>
+                <option>Binnenkort</option>
+                <option>Gereserveerd</option>
+                <option>Verkocht</option>
+              </select>
+            </label>
+          </div>
+          <label>
+            Foto URL
+            <input type="url" name="imageUrl" placeholder="https://...">
+          </label>
+          <label>
+            Omschrijving
+            <textarea name="description" rows="5" placeholder="Korte verkooptekst"></textarea>
+          </label>
+          <button class="primary-button" type="submit">Opslaan</button>
+          <p class="form-message" id="vehicle-message" role="status"></p>
+        </form>
+
+        <section class="vehicle-manager" aria-labelledby="vehicles-title">
+          <div class="manager-header">
+            <div>
+              <p class="eyebrow">Aanbod</p>
+              <h2 id="vehicles-title">Voertuigen</h2>
+            </div>
+            <span class="count-pill" id="vehicle-count">0</span>
+          </div>
+          <div class="vehicle-list" id="vehicle-list"></div>
+        </section>
       </section>
     </main>
   </body>

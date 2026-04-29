@@ -2,6 +2,8 @@
 
 Nieuwe website voor ZeelandCamper met een eenvoudige login en dashboard.
 
+De voorkant toont het actuele voertuigenaanbod. Na login kun je voertuigen toevoegen, bewerken en verwijderen in het dashboard.
+
 ## Lokaal starten
 
 ```powershell
@@ -30,3 +32,5 @@ Gebruik deze instellingen:
 - Build Command: leeg laten
 - Start Command: `npm start`
 - Environment: `Node`
+
+De huidige eenvoudige database staat in `data/vehicles.json`. Voor langdurige productieopslag is later een echte database zoals Render Postgres de beste vervolgstap.

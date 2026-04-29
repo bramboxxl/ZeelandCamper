@@ -8,6 +8,8 @@ const USERNAME = process.env.SITE_USERNAME || "bram";
 const PASSWORD = process.env.SITE_PASSWORD || "1234";
 const SESSION_SECRET = process.env.SESSION_SECRET || "change-this-secret-on-render";
 const PUBLIC_DIR = path.join(__dirname, "public");
+const DATA_DIR = path.join(__dirname, "data");
+const VEHICLES_FILE = path.join(DATA_DIR, "vehicles.json");
 const SESSION_MAX_AGE = 1000 * 60 * 60 * 8;
 
 const sessions = new Map();
@@ -78,6 +80,52 @@ function createSessionToken() {
     .digest("hex");
 }
 
+function ensureDataFile() {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+
+  if (!fs.existsSync(VEHICLES_FILE)) {
+    fs.writeFileSync(VEHICLES_FILE, "[]\n", "utf8");
+  }
+}
+
+function readVehicles() {
+  ensureDataFile();
+  const content = fs.readFileSync(VEHICLES_FILE, "utf8");
+  return JSON.parse(content || "[]");
+}
+
+function writeVehicles(vehicles) {
+  ensureDataFile();
+  fs.writeFileSync(VEHICLES_FILE, `${JSON.stringify(vehicles, null, 2)}\n`, "utf8");
+}
+
+function cleanVehicle(input) {
+  return {
+    title: String(input.title || "").trim(),
+    brand: String(input.brand || "").trim(),
+    model: String(input.model || "").trim(),
+    year: String(input.year || "").trim(),
+    mileage: String(input.mileage || "").trim(),
+    price: String(input.price || "").trim(),
+    status: String(input.status || "Te koop").trim(),
+    description: String(input.description || "").trim(),
+    imageUrl: String(input.imageUrl || "").trim()
+  };
+}
+
+function requireSession(request, response) {
+  const session = getSession(request);
+
+  if (!session) {
+    sendJson(response, 401, { ok: false, message: "Niet ingelogd" });
+    return null;
+  }
+
+  return session;
+}
+
 function serveFile(response, filePath) {
   fs.readFile(filePath, (error, data) => {
     if (error) {
@@ -107,6 +155,7 @@ function resolvePublicPath(urlPath) {
 
 const server = http.createServer(async (request, response) => {
   const url = new URL(request.url, `http://${request.headers.host}`);
+  const vehicleMatch = url.pathname.match(/^\/api\/vehicles\/([^/]+)$/);
 
   if (request.method === "POST" && url.pathname === "/api/login") {
     try {
@@ -152,13 +201,87 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  if (request.method === "GET" && url.pathname === "/api/vehicles") {
+    const vehicles = readVehicles();
+    sendJson(response, 200, { vehicles });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/vehicles") {
+    if (!requireSession(request, response)) return;
+
+    try {
+      const body = await readBody(request);
+      const vehicle = cleanVehicle(JSON.parse(body || "{}"));
+
+      if (!vehicle.title) {
+        sendJson(response, 400, { ok: false, message: "Titel is verplicht" });
+        return;
+      }
+
+      const vehicles = readVehicles();
+      const newVehicle = {
+        id: crypto.randomUUID(),
+        ...vehicle
+      };
+      vehicles.unshift(newVehicle);
+      writeVehicles(vehicles);
+      sendJson(response, 201, { ok: true, vehicle: newVehicle });
+    } catch (error) {
+      sendJson(response, 400, { ok: false, message: "Voertuig kon niet worden opgeslagen" });
+    }
+    return;
+  }
+
+  if (request.method === "PUT" && vehicleMatch) {
+    if (!requireSession(request, response)) return;
+
+    try {
+      const body = await readBody(request);
+      const updates = cleanVehicle(JSON.parse(body || "{}"));
+      const vehicles = readVehicles();
+      const index = vehicles.findIndex((vehicle) => vehicle.id === vehicleMatch[1]);
+
+      if (index === -1) {
+        sendJson(response, 404, { ok: false, message: "Voertuig niet gevonden" });
+        return;
+      }
+
+      vehicles[index] = {
+        ...vehicles[index],
+        ...updates
+      };
+      writeVehicles(vehicles);
+      sendJson(response, 200, { ok: true, vehicle: vehicles[index] });
+    } catch (error) {
+      sendJson(response, 400, { ok: false, message: "Voertuig kon niet worden bijgewerkt" });
+    }
+    return;
+  }
+
+  if (request.method === "DELETE" && vehicleMatch) {
+    if (!requireSession(request, response)) return;
+
+    const vehicles = readVehicles();
+    const nextVehicles = vehicles.filter((vehicle) => vehicle.id !== vehicleMatch[1]);
+
+    if (nextVehicles.length === vehicles.length) {
+      sendJson(response, 404, { ok: false, message: "Voertuig niet gevonden" });
+      return;
+    }
+
+    writeVehicles(nextVehicles);
+    sendJson(response, 200, { ok: true });
+    return;
+  }
+
   if (request.method !== "GET") {
     response.writeHead(405);
     response.end("Methode niet toegestaan");
     return;
   }
 
-  if (url.pathname === "/dashboard" && !getSession(request)) {
+  if ((url.pathname === "/dashboard" || url.pathname === "/dashboard.html") && !getSession(request)) {
     response.writeHead(302, { Location: "/login.html" });
     response.end();
     return;
