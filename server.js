@@ -164,7 +164,11 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
-  const filePath = resolvePublicPath(url.pathname === "/dashboard" ? "/dashboard.html" : url.pathname);
+  const routeAliases = {
+    "/dashboard": "/dashboard.html",
+    "/login": "/login.html"
+  };
+  const filePath = resolvePublicPath(routeAliases[url.pathname] || url.pathname);
   if (!filePath) {
     response.writeHead(403);
     response.end("Verboden");
