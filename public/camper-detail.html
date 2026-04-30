@@ -27,6 +27,7 @@
 
       <section class="choice-bar" aria-label="Keuzes">
         <a class="secondary-button small-button" href="/dashboard">Overzicht</a>
+        <a class="secondary-button small-button" href="/todos">Todo overzicht</a>
         <a class="secondary-button small-button" id="previous-vehicle" href="/dashboard">Vorige camper</a>
         <a class="secondary-button small-button" id="next-vehicle" href="/dashboard">Volgende camper</a>
         <button class="primary-button small-button" form="vehicle-form" type="submit">Opslaan</button>
@@ -41,6 +42,18 @@
           </div>
           <span class="count-pill" id="position-label">-</span>
         </div>
+
+        <section class="todo-editor" aria-labelledby="todo-title">
+          <div class="todo-header">
+            <div>
+              <p class="eyebrow">Actiepunten</p>
+              <h3 id="todo-title">Todo punten</h3>
+            </div>
+            <button class="secondary-button small-button" id="add-todo" type="button">Todo toevoegen</button>
+          </div>
+          <div class="todo-list" id="todo-list"></div>
+          <input type="hidden" name="todos" id="todos-field" value="[]">
+        </section>
 
         <div class="form-row">
           <label>

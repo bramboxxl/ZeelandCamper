@@ -101,8 +101,31 @@ function writeVehicles(vehicles) {
   fs.writeFileSync(VEHICLES_FILE, `${JSON.stringify(vehicles, null, 2)}\n`, "utf8");
 }
 
+function cleanTodos(value) {
+  if (value === undefined) return undefined;
+
+  let todos = [];
+  if (Array.isArray(value)) {
+    todos = value;
+  } else {
+    try {
+      todos = JSON.parse(String(value || "[]"));
+    } catch (error) {
+      todos = [];
+    }
+  }
+
+  return todos
+    .map((todo) => ({
+      id: String(todo.id || crypto.randomUUID()),
+      text: String(todo.text || "").trim(),
+      done: Boolean(todo.done)
+    }))
+    .filter((todo) => todo.text);
+}
+
 function cleanVehicle(input) {
-  return {
+  const vehicle = {
     title: String(input.title || "").trim(),
     brand: String(input.brand || "").trim(),
     model: String(input.model || "").trim(),
@@ -135,6 +158,13 @@ function cleanVehicle(input) {
     contractUntil: String(input.contractUntil || "").trim(),
     additionalInfo: String(input.additionalInfo || "").trim()
   };
+
+  const todos = cleanTodos(input.todos);
+  if (todos !== undefined) {
+    vehicle.todos = todos;
+  }
+
+  return vehicle;
 }
 
 function requireSession(request, response) {
@@ -244,6 +274,7 @@ const server = http.createServer(async (request, response) => {
       const vehicles = readVehicles();
       const newVehicle = {
         id: crypto.randomUUID(),
+        todos: [],
         ...vehicle
       };
       vehicles.unshift(newVehicle);
@@ -303,7 +334,7 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
-  const protectedPages = ["/dashboard", "/dashboard.html", "/camper-detail", "/camper-detail.html"];
+  const protectedPages = ["/dashboard", "/dashboard.html", "/camper-detail", "/camper-detail.html", "/todos", "/todos.html"];
   if (protectedPages.includes(url.pathname) && !getSession(request)) {
     response.writeHead(302, { Location: "/login.html" });
     response.end();
@@ -313,6 +344,7 @@ const server = http.createServer(async (request, response) => {
   const routeAliases = {
     "/dashboard": "/dashboard.html",
     "/camper-detail": "/camper-detail.html",
+    "/todos": "/todos.html",
     "/login": "/login.html"
   };
   const filePath = resolvePublicPath(routeAliases[url.pathname] || url.pathname);

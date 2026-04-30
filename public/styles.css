@@ -618,6 +618,104 @@ h3 {
   margin-top: 14px;
 }
 
+.todo-editor {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.todo-header,
+.todo-camper-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.todo-header h3,
+.todo-camper-header h3 {
+  margin-bottom: 0;
+}
+
+.todo-list,
+.todo-items,
+.todo-overview {
+  display: grid;
+  gap: 10px;
+}
+
+.todo-overview {
+  padding: 18px;
+}
+
+.todo-row,
+.todo-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  min-height: 48px;
+  padding: 10px;
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.todo-item {
+  grid-template-columns: auto minmax(0, 1fr);
+  cursor: pointer;
+}
+
+.todo-row.is-done .todo-input,
+.todo-item.is-done span {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.todo-check-label {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  min-height: 28px;
+}
+
+.todo-checkbox {
+  width: 20px !important;
+  min-height: 20px !important;
+  padding: 0 !important;
+  accent-color: var(--green);
+  cursor: pointer;
+}
+
+.todo-input {
+  min-height: 38px !important;
+  background: var(--white);
+}
+
+.todo-camper-card {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.todo-camper-header p,
+.todo-item span {
+  margin: 0;
+  color: var(--muted);
+}
+
+.compact {
+  padding: 10px 0;
+}
+
 @media (max-width: 900px) {
   .site-header {
     align-items: flex-start;
@@ -682,6 +780,21 @@ h3 {
   }
 
   .row-actions {
+    justify-content: flex-start;
+  }
+
+  .todo-header,
+  .todo-camper-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .todo-row {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+
+  .todo-check-label {
     justify-content: flex-start;
   }
 }

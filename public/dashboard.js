@@ -33,8 +33,8 @@
     <a class="overview-card" href="/camper-detail.html?id=${encodeURIComponent(vehicle.id)}">
       <span class="vehicle-status">${escapeHtml(vehicle.sourceId || vehicle.id)}</span>
       <h3>${escapeHtml(vehicle.title || "Camper")}</h3>
-      <p>${escapeHtml(vehicle.licensePlate)}${vehicle.year ? ` · ${escapeHtml(vehicle.year)}` : ""}</p>
-      <p>${formatMileage(vehicle.mileage)}${vehicle.price ? ` · ${formatPrice(vehicle.price)}` : ""}</p>
+      <p>${escapeHtml(vehicle.licensePlate)}${vehicle.year ? ` - ${escapeHtml(vehicle.year)}` : ""}</p>
+      <p>${formatMileage(vehicle.mileage)}${vehicle.price ? ` - ${formatPrice(vehicle.price)}` : ""}</p>
       <p>${escapeHtml(vehicle.notes || vehicle.additionalInfo || vehicle.description || "Geen opmerking")}</p>
       <small>Camper ${index + 1} van ${vehicles.length}</small>
     </a>
