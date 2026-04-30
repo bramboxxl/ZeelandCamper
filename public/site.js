@@ -43,11 +43,11 @@
           ? `<img class="vehicle-photo" src="${escapeHtml(vehicle.imageUrl)}" alt="${escapeHtml(vehicle.title)}">`
           : `<div class="camper-image camper-image-${(index % 3) + 1}"></div>`}
         <div>
-          <p class="card-kicker">${escapeHtml(vehicle.status || "Te koop")}</p>
+          <p class="card-kicker">${escapeHtml(vehicle.sourceId || vehicle.licensePlate || "Camper")}</p>
           <h3>${escapeHtml(vehicle.title)}</h3>
-          <p>${escapeHtml(vehicle.brand)} ${escapeHtml(vehicle.model)}${vehicle.year ? `, ${escapeHtml(vehicle.year)}` : ""}</p>
+          <p>${vehicle.licensePlate ? `${escapeHtml(vehicle.licensePlate)} · ` : ""}${vehicle.year ? `${escapeHtml(vehicle.year)} · ` : ""}${escapeHtml(vehicle.color)}</p>
           <p>${formatMileage(vehicle.mileage)}${vehicle.price ? ` · ${formatPrice(vehicle.price)}` : ""}</p>
-          <p>${escapeHtml(vehicle.description)}</p>
+          <p>${escapeHtml(vehicle.additionalInfo || vehicle.description || vehicle.notes)}</p>
         </div>
       </article>
     `).join("");

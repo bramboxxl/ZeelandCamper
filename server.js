@@ -111,7 +111,29 @@ function cleanVehicle(input) {
     price: String(input.price || "").trim(),
     status: String(input.status || "Te koop").trim(),
     description: String(input.description || "").trim(),
-    imageUrl: String(input.imageUrl || "").trim()
+    imageUrl: String(input.imageUrl || "").trim(),
+    sourceId: String(input.sourceId || "").trim(),
+    color: String(input.color || "").trim(),
+    licensePlate: String(input.licensePlate || "").trim(),
+    inspected: String(input.inspected || "").trim(),
+    contract: String(input.contract || "").trim(),
+    service: String(input.service || "").trim(),
+    platform: String(input.platform || "").trim(),
+    notes: String(input.notes || "").trim(),
+    source: String(input.source || "").trim(),
+    funding: String(input.funding || "").trim(),
+    purchasePrice: String(input.purchasePrice || "").trim(),
+    anwbBovag: String(input.anwbBovag || "").trim(),
+    margin: String(input.margin || "").trim(),
+    adverts: String(input.adverts || "").trim(),
+    costs: String(input.costs || "").trim(),
+    invoice: String(input.invoice || "").trim(),
+    costsExVat: String(input.costsExVat || "").trim(),
+    profitExVat: String(input.profitExVat || "").trim(),
+    vatIncluded: String(input.vatIncluded || "").trim(),
+    grossProfit: String(input.grossProfit || "").trim(),
+    contractUntil: String(input.contractUntil || "").trim(),
+    additionalInfo: String(input.additionalInfo || "").trim()
   };
 }
 

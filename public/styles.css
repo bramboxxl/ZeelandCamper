@@ -387,9 +387,25 @@ h3 {
 
 .admin-layout {
   display: grid;
-  grid-template-columns: minmax(320px, 0.85fr) minmax(0, 1.15fr);
+  grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
   gap: 24px;
   align-items: start;
+}
+
+.choice-bar {
+  position: sticky;
+  top: 88px;
+  z-index: 15;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 24px;
+  padding: 14px;
+  background: rgba(246, 249, 251, 0.94);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  backdrop-filter: blur(14px);
 }
 
 .vehicle-form,
@@ -406,6 +422,8 @@ h3 {
 
 .vehicle-manager {
   overflow: hidden;
+  position: sticky;
+  top: 170px;
 }
 
 .form-header,
@@ -454,6 +472,37 @@ h3 {
 
 .vehicle-list {
   display: grid;
+  max-height: calc(100vh - 260px);
+  overflow: auto;
+}
+
+.camper-list-button {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  padding: 16px 20px;
+  color: var(--ink);
+  background: var(--white);
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  cursor: pointer;
+}
+
+.camper-list-button:hover,
+.camper-list-button.is-active {
+  background: var(--surface);
+}
+
+.camper-list-button strong {
+  display: inline-block;
+  min-width: 70px;
+  color: var(--brand-blue);
+}
+
+.camper-list-button small {
+  color: var(--muted);
+  font-weight: 700;
 }
 
 .vehicle-row {
@@ -506,6 +555,23 @@ h3 {
   color: var(--muted);
 }
 
+.finance-details {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.finance-details summary {
+  color: var(--deep-navy);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.finance-details .form-row,
+.finance-details label {
+  margin-top: 14px;
+}
+
 @media (max-width: 900px) {
   .site-header {
     align-items: flex-start;
@@ -529,6 +595,15 @@ h3 {
 
   .hero {
     min-height: auto;
+  }
+
+  .choice-bar,
+  .vehicle-manager {
+    position: static;
+  }
+
+  .vehicle-list {
+    max-height: none;
   }
 }
 

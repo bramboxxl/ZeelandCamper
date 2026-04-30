@@ -18,9 +18,28 @@
   const message = document.querySelector("#vehicle-message");
   const formTitle = document.querySelector("#form-title");
   const resetButton = document.querySelector("#reset-form");
+  const overviewButton = document.querySelector("#show-overview");
+  const previousButton = document.querySelector("#previous-vehicle");
+  const nextButton = document.querySelector("#next-vehicle");
   let vehicles = [];
+  let selectedIndex = -1;
 
   await loadVehicles();
+  if (vehicles.length) selectVehicle(0);
+
+  overviewButton.addEventListener("click", () => {
+    document.querySelector(".vehicle-manager").scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+
+  previousButton.addEventListener("click", () => {
+    if (!vehicles.length) return;
+    selectVehicle((selectedIndex - 1 + vehicles.length) % vehicles.length);
+  });
+
+  nextButton.addEventListener("click", () => {
+    if (!vehicles.length) return;
+    selectVehicle((selectedIndex + 1) % vehicles.length);
+  });
 
   resetButton.addEventListener("click", () => resetForm());
 
@@ -32,6 +51,7 @@
     const id = formData.get("id");
     const payload = Object.fromEntries(formData.entries());
     delete payload.id;
+    payload.status = payload.notes || "Te koop";
 
     const response = await fetch(id ? `/api/vehicles/${encodeURIComponent(id)}` : "/api/vehicles", {
       method: id ? "PUT" : "POST",
@@ -49,8 +69,9 @@
     }
 
     message.textContent = "Opgeslagen";
-    resetForm();
     await loadVehicles();
+    const index = vehicles.findIndex((vehicle) => vehicle.id === result.vehicle.id);
+    selectVehicle(index === -1 ? 0 : index);
   });
 
   async function loadVehicles() {
@@ -63,66 +84,54 @@
 
   function renderVehicles() {
     if (!vehicles.length) {
-      list.innerHTML = `<p class="empty-state">Nog geen voertuigen in de database.</p>`;
+      list.innerHTML = `<p class="empty-state">Nog geen campers in de database.</p>`;
       return;
     }
 
-    list.innerHTML = vehicles.map((vehicle) => `
-      <article class="vehicle-row">
-        <div>
-          <p class="vehicle-status">${escapeHtml(vehicle.status)}</p>
-          <h3>${escapeHtml(vehicle.title)}</h3>
-          <p>${escapeHtml(vehicle.brand)} ${escapeHtml(vehicle.model)}${vehicle.year ? ` · ${escapeHtml(vehicle.year)}` : ""}</p>
-          <p>${formatMileage(vehicle.mileage)}${vehicle.price ? ` · ${formatPrice(vehicle.price)}` : ""}</p>
-        </div>
-        <div class="row-actions">
-          <button class="secondary-button small-button" type="button" data-edit="${escapeHtml(vehicle.id)}">Bewerken</button>
-          <button class="danger-button small-button" type="button" data-delete="${escapeHtml(vehicle.id)}">Verwijderen</button>
-        </div>
-      </article>
+    list.innerHTML = vehicles.map((vehicle, index) => `
+      <button class="camper-list-button${index === selectedIndex ? " is-active" : ""}" type="button" data-index="${index}">
+        <span>
+          <strong>${escapeHtml(vehicle.sourceId || vehicle.id)}</strong>
+          ${escapeHtml(vehicle.title)}
+        </span>
+        <small>${escapeHtml(vehicle.licensePlate)}${vehicle.price ? ` · ${formatPrice(vehicle.price)}` : ""}</small>
+      </button>
     `).join("");
 
-    list.querySelectorAll("[data-edit]").forEach((button) => {
-      button.addEventListener("click", () => editVehicle(button.dataset.edit));
-    });
-
-    list.querySelectorAll("[data-delete]").forEach((button) => {
-      button.addEventListener("click", () => deleteVehicle(button.dataset.delete));
+    list.querySelectorAll("[data-index]").forEach((button) => {
+      button.addEventListener("click", () => selectVehicle(Number(button.dataset.index)));
     });
   }
 
-  function editVehicle(id) {
-    const vehicle = vehicles.find((item) => item.id === id);
-    if (!vehicle) return;
+  function selectVehicle(index) {
+    if (index < 0 || index >= vehicles.length) return;
 
-    formTitle.textContent = "Voertuig bewerken";
+    selectedIndex = index;
+    const vehicle = vehicles[index];
+    formTitle.textContent = `${vehicle.sourceId || vehicle.id} · ${vehicle.title || "Camper"}`;
+
     Object.entries(vehicle).forEach(([key, value]) => {
       if (form.elements[key]) {
         form.elements[key].value = value || "";
       }
     });
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
 
-  async function deleteVehicle(id) {
-    const vehicle = vehicles.find((item) => item.id === id);
-    if (!vehicle || !confirm(`${vehicle.title} verwijderen?`)) return;
-
-    const response = await fetch(`/api/vehicles/${encodeURIComponent(id)}`, {
-      method: "DELETE"
-    });
-
-    if (response.ok) {
-      await loadVehicles();
-      resetForm();
+    if (form.elements.status) {
+      form.elements.status.value = vehicle.status || vehicle.notes || "Te koop";
     }
+
+    message.textContent = "";
+    renderVehicles();
+    form.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   function resetForm() {
     form.reset();
     form.elements.id.value = "";
-    formTitle.textContent = "Voertuig toevoegen";
+    formTitle.textContent = "Nieuwe camper";
+    selectedIndex = -1;
     message.textContent = "";
+    renderVehicles();
   }
 })();
 
@@ -143,10 +152,4 @@ function formatPrice(value) {
     currency: "EUR",
     maximumFractionDigits: 0
   }).format(number);
-}
-
-function formatMileage(value) {
-  const number = Number(String(value).replace(/[^\d]/g, ""));
-  if (!number) return "";
-  return `${new Intl.NumberFormat("nl-NL").format(number)} km`;
 }
