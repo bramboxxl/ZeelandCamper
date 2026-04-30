@@ -303,7 +303,8 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
-  if ((url.pathname === "/dashboard" || url.pathname === "/dashboard.html") && !getSession(request)) {
+  const protectedPages = ["/dashboard", "/dashboard.html", "/camper-detail", "/camper-detail.html"];
+  if (protectedPages.includes(url.pathname) && !getSession(request)) {
     response.writeHead(302, { Location: "/login.html" });
     response.end();
     return;
@@ -311,6 +312,7 @@ const server = http.createServer(async (request, response) => {
 
   const routeAliases = {
     "/dashboard": "/dashboard.html",
+    "/camper-detail": "/camper-detail.html",
     "/login": "/login.html"
   };
   const filePath = resolvePublicPath(routeAliases[url.pathname] || url.pathname);

@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Dashboard | ZeelandCamper</title>
+    <title>Camper overzicht | ZeelandCamper</title>
     <link rel="stylesheet" href="/styles.css">
     <script defer src="/dashboard.js"></script>
   </head>
@@ -22,180 +22,23 @@
       <section class="dashboard-hero">
         <p class="eyebrow">Dashboard</p>
         <h1>Camper overzicht</h1>
-        <p>Klik op een camper om de details te bekijken, aan te passen en op te slaan.</p>
+        <p>Klik op een camper om de detaildata te bekijken en te bewerken.</p>
       </section>
 
       <section class="choice-bar" aria-label="Keuzes">
-        <button class="secondary-button small-button" id="show-overview" type="button">Overzicht</button>
-        <button class="secondary-button small-button" id="previous-vehicle" type="button">Vorige camper</button>
-        <button class="secondary-button small-button" id="next-vehicle" type="button">Volgende camper</button>
-        <button class="primary-button small-button" form="vehicle-form" type="submit">Opslaan</button>
+        <a class="primary-button small-button" href="/dashboard">Overzicht</a>
+        <a class="secondary-button small-button" id="first-detail-link" href="/camper-detail.html">Eerste camper</a>
       </section>
 
-      <section class="admin-layout">
-        <form class="vehicle-form" id="vehicle-form">
-          <input type="hidden" name="id">
-          <div class="form-header">
-            <div>
-              <p class="eyebrow">Camperdetails</p>
-              <h2 id="form-title">Selecteer een camper</h2>
-            </div>
-            <button class="secondary-button small-button" id="reset-form" type="button">Nieuw</button>
+      <section class="overview-panel" aria-labelledby="vehicles-title">
+        <div class="manager-header">
+          <div>
+            <p class="eyebrow">Excel database</p>
+            <h2 id="vehicles-title">Campers</h2>
           </div>
-
-          <div class="form-row">
-            <label>
-              ID
-              <input type="text" name="sourceId" placeholder="ZC001">
-            </label>
-            <label>
-              Kenteken
-              <input type="text" name="licensePlate" placeholder="AA-123-B">
-            </label>
-          </div>
-          <label>
-            Merk en type
-            <input type="text" name="title" placeholder="Bijv. Hymer B-Klasse" required>
-          </label>
-          <div class="form-row">
-            <label>
-              Kleur
-              <input type="text" name="color" placeholder="Wit">
-            </label>
-            <label>
-              Bron
-              <input type="text" name="source" placeholder="Makelaar">
-            </label>
-          </div>
-          <div class="form-row">
-            <label>
-              Bouwjaar
-              <input type="text" name="year" inputmode="numeric" placeholder="2020">
-            </label>
-            <label>
-              Kilometerstand
-              <input type="text" name="mileage" inputmode="numeric" placeholder="42000">
-            </label>
-          </div>
-          <div class="form-row">
-            <label>
-              Verkoopprijs
-              <input type="text" name="price" inputmode="numeric" placeholder="68950">
-            </label>
-            <label>
-              Aanschaf
-              <input type="text" name="purchasePrice" inputmode="numeric" placeholder="60000">
-            </label>
-          </div>
-          <div class="form-row">
-            <label>
-              Geinspecteerd
-              <input type="text" name="inspected">
-            </label>
-            <label>
-              Contract
-              <input type="text" name="contract">
-            </label>
-          </div>
-          <div class="form-row">
-            <label>
-              Beurt
-              <input type="text" name="service">
-            </label>
-            <label>
-              Platform
-              <input type="text" name="platform">
-            </label>
-          </div>
-          <div class="form-row">
-            <label>
-              Funding
-              <input type="text" name="funding">
-            </label>
-            <label>
-              Contract tot
-              <input type="date" name="contractUntil">
-            </label>
-          </div>
-          <div class="form-row">
-            <label>
-              Marge
-              <input type="text" name="margin" inputmode="numeric">
-            </label>
-            <label>
-              Kosten
-              <input type="text" name="costs" inputmode="numeric">
-            </label>
-          </div>
-          <div class="form-row">
-            <label>
-              ANWB/BOVAG
-              <input type="text" name="anwbBovag">
-            </label>
-            <label>
-              Adverts
-              <input type="text" name="adverts">
-            </label>
-          </div>
-          <details class="finance-details">
-            <summary>Financiele velden</summary>
-            <div class="form-row">
-              <label>
-                Factuur
-                <input type="text" name="invoice">
-              </label>
-              <label>
-                Kosten ex btw
-                <input type="text" name="costsExVat">
-              </label>
-            </div>
-            <div class="form-row">
-              <label>
-                Winst excl
-                <input type="text" name="profitExVat">
-              </label>
-              <label>
-                Btw hierin
-                <input type="text" name="vatIncluded">
-              </label>
-            </div>
-            <label>
-              Bruto winst
-              <input type="text" name="grossProfit">
-            </label>
-          </details>
-          <label>
-            Opmerking / status / actie
-            <textarea name="notes" rows="5"></textarea>
-          </label>
-          <label>
-            Aanvullende informatie
-            <textarea name="additionalInfo" rows="4"></textarea>
-          </label>
-          <label>
-            Publieke omschrijving
-            <textarea name="description" rows="4"></textarea>
-          </label>
-          <label>
-            Foto URL
-            <input type="url" name="imageUrl" placeholder="https://...">
-          </label>
-          <input type="hidden" name="brand">
-          <input type="hidden" name="model">
-          <input type="hidden" name="status">
-          <p class="form-message" id="vehicle-message" role="status"></p>
-        </form>
-
-        <section class="vehicle-manager" aria-labelledby="vehicles-title">
-          <div class="manager-header">
-            <div>
-              <p class="eyebrow">Aanbod</p>
-              <h2 id="vehicles-title">Voertuigen</h2>
-            </div>
-            <span class="count-pill" id="vehicle-count">0</span>
-          </div>
-          <div class="vehicle-list" id="vehicle-list"></div>
-        </section>
+          <span class="count-pill" id="vehicle-count">0</span>
+        </div>
+        <div class="overview-grid" id="vehicle-list"></div>
       </section>
     </main>
   </body>

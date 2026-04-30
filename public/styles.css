@@ -409,7 +409,8 @@ h3 {
 }
 
 .vehicle-form,
-.vehicle-manager {
+.vehicle-manager,
+.overview-panel {
   background: var(--white);
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -420,10 +421,18 @@ h3 {
   padding: 24px;
 }
 
+.detail-form {
+  max-width: 980px;
+}
+
 .vehicle-manager {
   overflow: hidden;
   position: sticky;
   top: 170px;
+}
+
+.overview-panel {
+  overflow: hidden;
 }
 
 .form-header,
@@ -474,6 +483,43 @@ h3 {
   display: grid;
   max-height: calc(100vh - 260px);
   overflow: auto;
+}
+
+.overview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+}
+
+.overview-card {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-height: 230px;
+  padding: 22px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: var(--white);
+}
+
+.overview-card:hover {
+  background: var(--surface);
+}
+
+.overview-card h3 {
+  margin-bottom: 0;
+}
+
+.overview-card p,
+.overview-card small {
+  margin: 0;
+  color: var(--muted);
+}
+
+.overview-card small {
+  align-self: end;
+  color: var(--brand-blue);
+  font-weight: 800;
 }
 
 .camper-list-button {
@@ -589,7 +635,8 @@ h3 {
   .split-section,
   .inventory-grid,
   .dashboard-grid,
-  .admin-layout {
+  .admin-layout,
+  .overview-grid {
     grid-template-columns: 1fr;
   }
 
