@@ -3,9 +3,9 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Camper overzicht | ZeelandCamper</title>
+    <title>Op het oog campers | ZeelandCamper</title>
     <link rel="stylesheet" href="/styles.css">
-    <script defer src="/dashboard.js"></script>
+    <script defer src="/op-het-oog.js"></script>
   </head>
   <body>
     <header class="site-header">
@@ -21,23 +21,22 @@
     <main class="dashboard-shell">
       <section class="dashboard-hero">
         <p class="eyebrow">Dashboard</p>
-        <h1>Camper overzicht</h1>
-        <p>Klik op een camper om de detaildata te bekijken en te bewerken.</p>
+        <h1>Op het oog</h1>
+        <p>Campers met status Op het oog.</p>
       </section>
 
       <section class="choice-bar" aria-label="Keuzes">
-        <a class="primary-button small-button" href="/dashboard">Overzicht</a>
-        <a class="secondary-button small-button" href="/op-het-oog">Op het oog</a>
+        <a class="secondary-button small-button" href="/dashboard">Overzicht</a>
+        <a class="primary-button small-button" href="/op-het-oog">Op het oog</a>
         <a class="secondary-button small-button" href="/new-camper">Nieuwe camper</a>
-        <a class="secondary-button small-button" id="first-detail-link" href="/camper-detail.html">Eerste camper</a>
         <a class="secondary-button small-button" href="/todos">Todo overzicht</a>
       </section>
 
-      <section class="overview-panel" aria-labelledby="vehicles-title">
+      <section class="overview-panel" aria-labelledby="watch-title">
         <div class="manager-header">
           <div>
-            <p class="eyebrow">Excel database</p>
-            <h2 id="vehicles-title">Campers</h2>
+            <p class="eyebrow">Selectie</p>
+            <h2 id="watch-title">Op het oog campers</h2>
           </div>
           <span class="count-pill" id="vehicle-count">0</span>
         </div>

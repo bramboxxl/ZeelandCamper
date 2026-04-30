@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="nl">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Foto's | ZeelandCamper</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script defer src="/photos.js"></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="ZeelandCamper home">
+        <img src="/assets/logo-zeelandcamper-web.jpg" alt="ZeelandCamper">
+      </a>
+      <nav class="top-nav" aria-label="Hoofdnavigatie">
+        <a href="/">Website</a>
+        <button class="nav-button" id="logout-button" type="button">Uitloggen</button>
+      </nav>
+    </header>
+
+    <main class="dashboard-shell">
+      <section class="dashboard-hero">
+        <p class="eyebrow">Dashboard</p>
+        <h1 id="page-title">Foto's</h1>
+        <p id="page-subtitle">Upload foto's uit een lokale map en bepaal de volgorde van de geselecteerde foto's.</p>
+      </section>
+
+      <section class="choice-bar" aria-label="Keuzes">
+        <a class="secondary-button small-button" href="/dashboard">Overzicht</a>
+        <a class="secondary-button small-button" id="detail-link" href="/dashboard">Terug naar camper</a>
+        <label class="primary-button small-button upload-button">
+          Foto's uit map halen
+          <input id="photo-input" type="file" accept="image/*" multiple webkitdirectory>
+        </label>
+        <span class="form-message" id="photo-message" role="status"></span>
+      </section>
+
+      <section class="photo-layout">
+        <div class="overview-panel">
+          <div class="manager-header">
+            <div>
+              <p class="eyebrow">Alle foto's</p>
+              <h2>Fotocarousel</h2>
+            </div>
+            <span class="count-pill" id="photo-count">0</span>
+          </div>
+          <div class="photo-carousel" id="photo-carousel"></div>
+        </div>
+
+        <div class="overview-panel">
+          <div class="manager-header">
+            <div>
+              <p class="eyebrow">Geselecteerd</p>
+              <h2>Volgorde</h2>
+            </div>
+            <span class="count-pill" id="selected-count">0</span>
+          </div>
+          <div class="selected-photos" id="selected-photos"></div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

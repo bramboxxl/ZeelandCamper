@@ -20,9 +20,13 @@
   const positionLabel = document.querySelector("#position-label");
   const previousLink = document.querySelector("#previous-vehicle");
   const nextLink = document.querySelector("#next-vehicle");
+  const photosLink = document.querySelector("#photos-link");
   const todoList = document.querySelector("#todo-list");
   const todosField = document.querySelector("#todos-field");
   const addTodoButton = document.querySelector("#add-todo");
+  const rdwLookupButton = document.querySelector("#rdw-lookup-button");
+  const rdwMessage = document.querySelector("#rdw-message");
+  const rdwField = document.querySelector("#rdw-finnik-field");
   const params = new URLSearchParams(window.location.search);
   const requestedId = params.get("id");
 
@@ -37,30 +41,62 @@
     return;
   }
 
-  const selectedIndex = Math.max(0, vehicles.findIndex((vehicle) => vehicle.id === requestedId));
+  const selectedIndex = Math.max(0, vehicles.findIndex((item) => item.id === requestedId));
   const vehicle = vehicles[selectedIndex];
   const previousVehicle = vehicles[(selectedIndex - 1 + vehicles.length) % vehicles.length];
   const nextVehicle = vehicles[(selectedIndex + 1) % vehicles.length];
   let todos = normalizeTodos(vehicle.todos);
+  let rdwFinnikData = normalizeRdwFinnikData(vehicle.rdwFinnikData);
 
   previousLink.href = `/camper-detail.html?id=${encodeURIComponent(previousVehicle.id)}`;
   nextLink.href = `/camper-detail.html?id=${encodeURIComponent(nextVehicle.id)}`;
+  photosLink.href = `/photos.html?id=${encodeURIComponent(vehicle.id)}`;
   positionLabel.textContent = `${selectedIndex + 1} / ${vehicles.length}`;
   pageTitle.textContent = vehicle.sourceId || vehicle.id;
   pageSubtitle.textContent = vehicle.title || "Camperdetails";
   formTitle.textContent = `${vehicle.sourceId || vehicle.id} - ${vehicle.title || "Camper"}`;
 
   Object.entries(vehicle).forEach(([key, value]) => {
-    if (form.elements[key] && key !== "todos") {
+    if (form.elements[key] && key !== "todos" && key !== "rdwFinnikData") {
       form.elements[key].value = value || "";
     }
   });
 
   if (form.elements.status) {
-    form.elements.status.value = vehicle.status || vehicle.notes || "Te koop";
+    form.elements.status.value = vehicle.status || "Op het oog";
   }
 
   renderTodos();
+  renderRdwFinnikData();
+
+  rdwLookupButton.addEventListener("click", async () => {
+    const licensePlate = form.elements.licensePlate.value.trim();
+    rdwMessage.textContent = "";
+
+    if (!licensePlate) {
+      rdwMessage.textContent = "Vul eerst een kenteken in.";
+      form.elements.licensePlate.focus();
+      return;
+    }
+
+    rdwLookupButton.disabled = true;
+    rdwMessage.textContent = "Data ophalen...";
+
+    try {
+      const response = await fetch(`/api/lookup/${encodeURIComponent(licensePlate)}`);
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || "Ophalen mislukt");
+
+      rdwFinnikData = normalizeRdwFinnikData(result.data);
+      applyRdwDataToForm(rdwFinnikData);
+      renderRdwFinnikData();
+      rdwMessage.textContent = "Data opgehaald. Klik op Opslaan om te bewaren.";
+    } catch (error) {
+      rdwMessage.textContent = error.message || "Ophalen mislukt";
+    } finally {
+      rdwLookupButton.disabled = false;
+    }
+  });
 
   addTodoButton.addEventListener("click", () => {
     todos.push({
@@ -114,8 +150,8 @@
     const id = formData.get("id");
     const payload = Object.fromEntries(formData.entries());
     delete payload.id;
-    payload.status = payload.notes || "Te koop";
     payload.todos = cleanTodosForSave(todos);
+    payload.rdwFinnikData = rdwFinnikData;
 
     const response = await fetch(`/api/vehicles/${encodeURIComponent(id)}`, {
       method: "PUT",
@@ -133,7 +169,9 @@
     }
 
     todos = normalizeTodos(result.vehicle.todos);
+    rdwFinnikData = normalizeRdwFinnikData(result.vehicle.rdwFinnikData);
     renderTodos();
+    renderRdwFinnikData();
     message.textContent = "Opgeslagen";
     pageSubtitle.textContent = result.vehicle.title || "Camperdetails";
     formTitle.textContent = `${result.vehicle.sourceId || result.vehicle.id} - ${result.vehicle.title || "Camper"}`;
@@ -161,6 +199,28 @@
   function syncTodosField() {
     todosField.value = JSON.stringify(cleanTodosForSave(todos));
   }
+
+  function renderRdwFinnikData() {
+    rdwField.value = JSON.stringify(rdwFinnikData || {});
+    document.querySelector("#rdw-dimensions").textContent = formatDimensions(rdwFinnikData);
+    document.querySelector("#rdw-seats").textContent = rdwFinnikData.seats || "-";
+    document.querySelector("#finnik-owners").textContent = rdwFinnikData.ownerCount || "Niet beschikbaar";
+    document.querySelector("#rdw-grid").innerHTML = rdwRows(rdwFinnikData).map(([label, value]) => `
+      <div>
+        <span>${escapeHtml(label)}</span>
+        <strong>${escapeHtml(value || "-")}</strong>
+      </div>
+    `).join("");
+  }
+
+  function applyRdwDataToForm(data) {
+    if (data.make) form.elements.brand.value = data.make;
+    if (data.tradeName) form.elements.model.value = data.tradeName;
+    if (data.tradeName && !form.elements.title.value.trim()) form.elements.title.value = `${data.make} ${data.tradeName}`.trim();
+    if (data.fuelType && !form.elements.additionalInfo.value.includes(data.fuelType)) {
+      form.elements.additionalInfo.value = [form.elements.additionalInfo.value, `Brandstof: ${data.fuelType}`].filter(Boolean).join("\n");
+    }
+  }
 })();
 
 function normalizeTodos(value) {
@@ -183,6 +243,43 @@ function cleanTodosForSave(todos) {
       done: Boolean(todo.done)
     }))
     .filter((todo) => todo.text);
+}
+
+function normalizeRdwFinnikData(value) {
+  return value && typeof value === "object" ? value : {};
+}
+
+function rdwRows(data) {
+  return [
+    ["Kenteken", data.licensePlate],
+    ["Merk", data.make],
+    ["Handelsbenaming", data.tradeName],
+    ["Voertuigsoort", data.vehicleType],
+    ["Inrichting", data.bodyType],
+    ["Brandstof", data.fuelType],
+    ["Afmetingen", formatDimensions(data)],
+    ["Zitplaatsen", data.seats],
+    ["Massa rijklaar", formatKg(data.massReady)],
+    ["Ledige massa", formatKg(data.emptyMass)],
+    ["Maximum massa", formatKg(data.maxMass)],
+    ["APK tot", data.apkUntil],
+    ["Eerste toelating", data.firstAdmission],
+    ["Aantal eigenaren", data.ownerCount || "Niet beschikbaar"],
+    ["Gemiddelde landelijke wegenbelasting", data.roadTaxNationalAverage],
+    ["Wegenbelasting Zeeland", data.roadTaxZeeland],
+    ["Finnik status", data.finnikStatus]
+  ];
+}
+
+function formatDimensions(data) {
+  const length = data.length ? `${data.length} cm` : "";
+  const width = data.width ? `${data.width} cm` : "";
+  const height = data.height ? `${data.height} cm` : "";
+  return [length, width, height].filter(Boolean).join(" x ") || "-";
+}
+
+function formatKg(value) {
+  return value ? `${value} kg` : "";
 }
 
 function createTodoId() {

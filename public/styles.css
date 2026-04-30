@@ -336,7 +336,8 @@ h3 {
 .auth-card input,
 .vehicle-form input,
 .vehicle-form select,
-.vehicle-form textarea {
+.vehicle-form textarea,
+.status-select {
   width: 100%;
   min-height: 46px;
   padding: 0 14px;
@@ -500,6 +501,11 @@ h3 {
   border-right: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
   background: var(--white);
+}
+
+.overview-card-link {
+  display: grid;
+  gap: 8px;
 }
 
 .overview-card:hover {
@@ -712,6 +718,146 @@ h3 {
   color: var(--muted);
 }
 
+.rdw-panel {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  background: #eef7f4;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.rdw-highlights,
+.rdw-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.rdw-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.rdw-highlights > div,
+.rdw-grid > div,
+.status-control {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.rdw-highlights span,
+.rdw-grid span,
+.status-control {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.rdw-highlights strong,
+.rdw-grid strong {
+  color: var(--deep-navy);
+  font-size: 1rem;
+}
+
+.status-control {
+  align-self: end;
+  margin-top: 8px;
+}
+
+.upload-button {
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.upload-button input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.photo-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.8fr);
+  gap: 22px;
+  align-items: start;
+}
+
+.photo-carousel {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(260px, 340px);
+  gap: 14px;
+  overflow-x: auto;
+  padding: 18px;
+  scroll-snap-type: x proximity;
+}
+
+.photo-card,
+.selected-photo {
+  overflow: hidden;
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.photo-card {
+  display: grid;
+  scroll-snap-align: start;
+}
+
+.photo-card.is-selected {
+  outline: 3px solid var(--green);
+}
+
+.photo-card img,
+.selected-photo img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+}
+
+.photo-card > div,
+.selected-photo {
+  padding: 12px;
+}
+
+.photo-card strong,
+.selected-photo strong {
+  display: block;
+  margin-bottom: 10px;
+  word-break: break-word;
+}
+
+.selected-photos {
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+}
+
+.selected-photo {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  cursor: grab;
+}
+
+.selected-photo:active {
+  cursor: grabbing;
+}
+
+.selected-photo img {
+  aspect-ratio: 1;
+  border-radius: 6px;
+}
+
 .compact {
   padding: 10px 0;
 }
@@ -734,7 +880,10 @@ h3 {
   .inventory-grid,
   .dashboard-grid,
   .admin-layout,
-  .overview-grid {
+  .overview-grid,
+  .rdw-highlights,
+  .rdw-grid,
+  .photo-layout {
     grid-template-columns: 1fr;
   }
 

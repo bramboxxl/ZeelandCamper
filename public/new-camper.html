@@ -3,9 +3,9 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Camperdetails | ZeelandCamper</title>
+    <title>Nieuwe camper | ZeelandCamper</title>
     <link rel="stylesheet" href="/styles.css">
-    <script defer src="/camper-detail.js"></script>
+    <script defer src="/new-camper.js"></script>
   </head>
   <body>
     <header class="site-header">
@@ -21,43 +21,26 @@
     <main class="dashboard-shell">
       <section class="dashboard-hero">
         <p class="eyebrow">Dashboard</p>
-        <h1 id="page-title">Camperdetails</h1>
-        <p id="page-subtitle">Bekijk, wijzig en bewaar de data van deze camper.</p>
+        <h1>Nieuwe camper</h1>
+        <p>Voeg een nieuwe camper toe en vul kentekendata automatisch aan.</p>
       </section>
 
       <section class="choice-bar" aria-label="Keuzes">
         <a class="secondary-button small-button" href="/dashboard">Overzicht</a>
         <a class="secondary-button small-button" href="/op-het-oog">Op het oog</a>
-        <a class="secondary-button small-button" href="/new-camper">Nieuwe camper</a>
-        <a class="secondary-button small-button" href="/todos">Todo overzicht</a>
-        <a class="secondary-button small-button" id="previous-vehicle" href="/dashboard">Vorige camper</a>
-        <a class="secondary-button small-button" id="next-vehicle" href="/dashboard">Volgende camper</a>
+        <a class="primary-button small-button" href="/new-camper">Nieuwe camper</a>
         <button class="secondary-button small-button" id="rdw-lookup-button" type="button">RDW & Finnik data</button>
-        <a class="secondary-button small-button" id="photos-link" href="/photos">Foto's uit map halen</a>
-        <button class="primary-button small-button" form="vehicle-form" type="submit">Opslaan</button>
+        <button class="primary-button small-button" form="new-vehicle-form" type="submit">Opslaan</button>
       </section>
 
-      <form class="vehicle-form detail-form" id="vehicle-form">
-        <input type="hidden" name="id">
+      <form class="vehicle-form detail-form" id="new-vehicle-form">
         <div class="form-header">
           <div>
-            <p class="eyebrow">Camperdetails</p>
-            <h2 id="form-title">Laden</h2>
+            <p class="eyebrow">Nieuwe invoer</p>
+            <h2>Camperdata</h2>
           </div>
-          <span class="count-pill" id="position-label">-</span>
+          <span class="count-pill">Nieuw</span>
         </div>
-
-        <section class="todo-editor" aria-labelledby="todo-title">
-          <div class="todo-header">
-            <div>
-              <p class="eyebrow">Actiepunten</p>
-              <h3 id="todo-title">Todo punten</h3>
-            </div>
-            <button class="secondary-button small-button" id="add-todo" type="button">Todo toevoegen</button>
-          </div>
-          <div class="todo-list" id="todo-list"></div>
-          <input type="hidden" name="todos" id="todos-field" value="[]">
-        </section>
 
         <section class="rdw-panel" aria-labelledby="rdw-title">
           <div class="todo-header">
@@ -87,7 +70,7 @@
         <div class="form-row">
           <label>
             ID
-            <input type="text" name="sourceId" placeholder="ZC001">
+            <input type="text" name="sourceId" placeholder="ZC021">
           </label>
           <label>
             Kenteken
@@ -138,102 +121,16 @@
             <input type="text" name="purchasePrice" inputmode="numeric" placeholder="60000">
           </label>
         </div>
-        <div class="form-row">
-          <label>
-            Geinspecteerd
-            <input type="text" name="inspected">
-          </label>
-          <label>
-            Contract
-            <input type="text" name="contract">
-          </label>
-        </div>
-        <div class="form-row">
-          <label>
-            Beurt
-            <input type="text" name="service">
-          </label>
-          <label>
-            Platform
-            <input type="text" name="platform">
-          </label>
-        </div>
-        <div class="form-row">
-          <label>
-            Funding
-            <input type="text" name="funding">
-          </label>
-          <label>
-            Contract tot
-            <input type="date" name="contractUntil">
-          </label>
-        </div>
-        <div class="form-row">
-          <label>
-            Marge
-            <input type="text" name="margin" inputmode="numeric">
-          </label>
-          <label>
-            Kosten
-            <input type="text" name="costs" inputmode="numeric">
-          </label>
-        </div>
-        <div class="form-row">
-          <label>
-            ANWB/BOVAG
-            <input type="text" name="anwbBovag">
-          </label>
-          <label>
-            Adverts
-            <input type="text" name="adverts">
-          </label>
-        </div>
-        <details class="finance-details">
-          <summary>Financiele velden</summary>
-          <div class="form-row">
-            <label>
-              Factuur
-              <input type="text" name="invoice">
-            </label>
-            <label>
-              Kosten ex btw
-              <input type="text" name="costsExVat">
-            </label>
-          </div>
-          <div class="form-row">
-            <label>
-              Winst excl
-              <input type="text" name="profitExVat">
-            </label>
-            <label>
-              Btw hierin
-              <input type="text" name="vatIncluded">
-            </label>
-          </div>
-          <label>
-            Bruto winst
-            <input type="text" name="grossProfit">
-          </label>
-        </details>
         <label>
-          Opmerking / status / actie
+          Opmerking / actie
           <textarea name="notes" rows="5"></textarea>
         </label>
         <label>
           Aanvullende informatie
           <textarea name="additionalInfo" rows="4"></textarea>
         </label>
-        <label>
-          Publieke omschrijving
-          <textarea name="description" rows="4"></textarea>
-        </label>
-        <label>
-          Foto URL
-          <input type="url" name="imageUrl" placeholder="https://...">
-        </label>
         <input type="hidden" name="brand">
         <input type="hidden" name="model">
-        <input type="hidden" name="rdwFinnikData" id="rdw-finnik-field" value="{}">
         <p class="form-message" id="vehicle-message" role="status"></p>
       </form>
     </main>

@@ -9,8 +9,10 @@ const PASSWORD = process.env.SITE_PASSWORD || "1234";
 const SESSION_SECRET = process.env.SESSION_SECRET || "change-this-secret-on-render";
 const PUBLIC_DIR = path.join(__dirname, "public");
 const DATA_DIR = path.join(__dirname, "data");
+const PHOTOS_DIR = path.join(DATA_DIR, "photos");
 const VEHICLES_FILE = path.join(DATA_DIR, "vehicles.json");
 const SESSION_MAX_AGE = 1000 * 60 * 60 * 8;
+const VEHICLE_STATUSES = ["Op het oog", "intake en contract", "staat te koop", "verkocht", "gaat niet door"];
 
 const sessions = new Map();
 
@@ -19,6 +21,7 @@ const mimeTypes = {
   ".html": "text/html; charset=utf-8",
   ".ico": "image/x-icon",
   ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
   ".js": "text/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
   ".png": "image/png",
@@ -61,7 +64,7 @@ function readBody(request) {
 
     request.on("data", (chunk) => {
       body += chunk;
-      if (body.length > 1_000_000) {
+      if (body.length > 60_000_000) {
         reject(new Error("Request body too large"));
         request.destroy();
       }
@@ -87,6 +90,10 @@ function ensureDataFile() {
 
   if (!fs.existsSync(VEHICLES_FILE)) {
     fs.writeFileSync(VEHICLES_FILE, "[]\n", "utf8");
+  }
+
+  if (!fs.existsSync(PHOTOS_DIR)) {
+    fs.mkdirSync(PHOTOS_DIR, { recursive: true });
   }
 }
 
@@ -124,7 +131,59 @@ function cleanTodos(value) {
     .filter((todo) => todo.text);
 }
 
+function cleanPhotos(value) {
+  if (value === undefined) return undefined;
+  const photos = Array.isArray(value) ? value : [];
+
+  return photos
+    .map((photo) => ({
+      id: String(photo.id || crypto.randomUUID()),
+      name: String(photo.name || "foto").trim(),
+      url: String(photo.url || "").trim(),
+      selected: Boolean(photo.selected)
+    }))
+    .filter((photo) => photo.url);
+}
+
+function cleanRdwFinnikData(value) {
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value || "{}");
+    } catch (error) {
+      value = {};
+    }
+  }
+
+  if (!value || typeof value !== "object") return undefined;
+
+  return {
+    fetchedAt: String(value.fetchedAt || "").trim(),
+    licensePlate: String(value.licensePlate || "").trim(),
+    source: String(value.source || "").trim(),
+    make: String(value.make || "").trim(),
+    tradeName: String(value.tradeName || "").trim(),
+    vehicleType: String(value.vehicleType || "").trim(),
+    bodyType: String(value.bodyType || "").trim(),
+    fuelType: String(value.fuelType || "").trim(),
+    seats: String(value.seats || "").trim(),
+    length: String(value.length || "").trim(),
+    width: String(value.width || "").trim(),
+    height: String(value.height || "").trim(),
+    massReady: String(value.massReady || "").trim(),
+    emptyMass: String(value.emptyMass || "").trim(),
+    maxMass: String(value.maxMass || "").trim(),
+    apkUntil: String(value.apkUntil || "").trim(),
+    firstAdmission: String(value.firstAdmission || "").trim(),
+    firstRegistrationNl: String(value.firstRegistrationNl || "").trim(),
+    ownerCount: String(value.ownerCount || "").trim(),
+    roadTaxNationalAverage: String(value.roadTaxNationalAverage || "").trim(),
+    roadTaxZeeland: String(value.roadTaxZeeland || "").trim(),
+    finnikStatus: String(value.finnikStatus || "").trim()
+  };
+}
+
 function cleanVehicle(input) {
+  const status = VEHICLE_STATUSES.includes(input.status) ? input.status : "Op het oog";
   const vehicle = {
     title: String(input.title || "").trim(),
     brand: String(input.brand || "").trim(),
@@ -132,7 +191,7 @@ function cleanVehicle(input) {
     year: String(input.year || "").trim(),
     mileage: String(input.mileage || "").trim(),
     price: String(input.price || "").trim(),
-    status: String(input.status || "Te koop").trim(),
+    status,
     description: String(input.description || "").trim(),
     imageUrl: String(input.imageUrl || "").trim(),
     sourceId: String(input.sourceId || "").trim(),
@@ -164,7 +223,111 @@ function cleanVehicle(input) {
     vehicle.todos = todos;
   }
 
+  const photos = cleanPhotos(input.photos);
+  if (photos !== undefined) {
+    vehicle.photos = photos;
+  }
+
+  const rdwFinnikData = cleanRdwFinnikData(input.rdwFinnikData);
+  if (rdwFinnikData !== undefined) {
+    vehicle.rdwFinnikData = rdwFinnikData;
+  }
+
   return vehicle;
+}
+
+function normalizeLicensePlate(value) {
+  return String(value || "").replace(/[^a-z0-9]/gi, "").toUpperCase();
+}
+
+function formatDate(value) {
+  const text = String(value || "");
+  if (text.length !== 8) return text;
+  return `${text.slice(6, 8)}-${text.slice(4, 6)}-${text.slice(0, 4)}`;
+}
+
+async function lookupRdwData(licensePlate) {
+  const kenteken = normalizeLicensePlate(licensePlate);
+  const vehicleUrl = `https://opendata.rdw.nl/resource/m9d7-ebf2.json?kenteken=${encodeURIComponent(kenteken)}`;
+  const fuelUrl = `https://opendata.rdw.nl/resource/8ys7-d773.json?kenteken=${encodeURIComponent(kenteken)}`;
+  const [vehicleResponse, fuelResponse] = await Promise.all([
+    fetch(vehicleUrl),
+    fetch(fuelUrl)
+  ]);
+
+  if (!vehicleResponse.ok) throw new Error("RDW voertuigdata kon niet worden opgehaald");
+  const vehicles = await vehicleResponse.json();
+  const fuels = fuelResponse.ok ? await fuelResponse.json() : [];
+  const rdw = vehicles[0];
+  const fuel = fuels[0];
+
+  if (!rdw) return null;
+
+  return {
+    licensePlate: kenteken,
+    source: "RDW Open Data",
+    make: rdw.merk || "",
+    tradeName: rdw.handelsbenaming || "",
+    vehicleType: rdw.voertuigsoort || "",
+    bodyType: rdw.inrichting || "",
+    fuelType: fuel?.brandstof_omschrijving || "",
+    seats: rdw.aantal_zitplaatsen || "",
+    length: rdw.lengte || "",
+    width: rdw.breedte || "",
+    height: rdw.hoogte_voertuig || "",
+    massReady: rdw.massa_rijklaar || "",
+    emptyMass: rdw.massa_ledig_voertuig || "",
+    maxMass: rdw.toegestane_maximum_massa_voertuig || "",
+    apkUntil: formatDate(rdw.vervaldatum_apk),
+    firstAdmission: formatDate(rdw.datum_eerste_toelating),
+    firstRegistrationNl: formatDate(rdw.datum_eerste_tenaamstelling_in_nederland)
+  };
+}
+
+async function lookupFinnikData(licensePlate) {
+  if (!process.env.FINNIK_API_URL) {
+    return {
+      ownerCount: "",
+      roadTaxNationalAverage: "Niet beschikbaar zonder Finnik koppeling",
+      roadTaxZeeland: "Niet beschikbaar zonder Finnik koppeling",
+      finnikStatus: "FINNIK_API_URL is niet ingesteld op de server"
+    };
+  }
+
+  const url = `${process.env.FINNIK_API_URL.replace(/\/$/, "")}/${encodeURIComponent(normalizeLicensePlate(licensePlate))}`;
+  const response = await fetch(url, {
+    headers: process.env.FINNIK_API_KEY ? { Authorization: `Bearer ${process.env.FINNIK_API_KEY}` } : {}
+  });
+  if (!response.ok) throw new Error("Finnik data kon niet worden opgehaald");
+  const data = await response.json();
+
+  return {
+    ownerCount: data.ownerCount || data.aantalEigenaren || "",
+    roadTaxNationalAverage: data.roadTaxNationalAverage || data.gemiddeldeWegenbelasting || "",
+    roadTaxZeeland: data.roadTaxZeeland || data.zeelandWegenbelasting || "",
+    finnikStatus: "Finnik data opgehaald"
+  };
+}
+
+async function lookupVehicleData(licensePlate) {
+  const rdw = await lookupRdwData(licensePlate);
+  if (!rdw) return null;
+  const finnik = await lookupFinnikData(licensePlate);
+
+  return {
+    fetchedAt: new Date().toISOString(),
+    ...rdw,
+    ...finnik
+  };
+}
+
+function photoExtension(mimeType, fallbackName = "") {
+  if (mimeType === "image/png") return ".png";
+  if (mimeType === "image/webp") return ".webp";
+  if (mimeType === "image/gif") return ".gif";
+  if (mimeType === "image/jpeg") return ".jpg";
+  const ext = path.extname(fallbackName).toLowerCase();
+  return [".jpg", ".jpeg", ".png", ".webp", ".gif"].includes(ext) ? ext : ".jpg";
 }
 
 function requireSession(request, response) {
@@ -208,6 +371,10 @@ function resolvePublicPath(urlPath) {
 const server = http.createServer(async (request, response) => {
   const url = new URL(request.url, `http://${request.headers.host}`);
   const vehicleMatch = url.pathname.match(/^\/api\/vehicles\/([^/]+)$/);
+  const lookupMatch = url.pathname.match(/^\/api\/lookup\/([^/]+)$/);
+  const photoMatch = url.pathname.match(/^\/api\/vehicles\/([^/]+)\/photos$/);
+  const photoDeleteMatch = url.pathname.match(/^\/api\/vehicles\/([^/]+)\/photos\/([^/]+)$/);
+  const servedPhotoMatch = url.pathname.match(/^\/vehicle-photos\/([^/]+)\/([^/]+)$/);
 
   if (request.method === "POST" && url.pathname === "/api/login") {
     try {
@@ -259,6 +426,22 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  if (request.method === "GET" && lookupMatch) {
+    if (!requireSession(request, response)) return;
+
+    try {
+      const data = await lookupVehicleData(lookupMatch[1]);
+      if (!data) {
+        sendJson(response, 404, { ok: false, message: "Geen RDW data gevonden voor dit kenteken" });
+        return;
+      }
+      sendJson(response, 200, { ok: true, data });
+    } catch (error) {
+      sendJson(response, 502, { ok: false, message: error.message || "RDW & Finnik data kon niet worden opgehaald" });
+    }
+    return;
+  }
+
   if (request.method === "POST" && url.pathname === "/api/vehicles") {
     if (!requireSession(request, response)) return;
 
@@ -275,6 +458,7 @@ const server = http.createServer(async (request, response) => {
       const newVehicle = {
         id: crypto.randomUUID(),
         todos: [],
+        photos: [],
         ...vehicle
       };
       vehicles.unshift(newVehicle);
@@ -312,6 +496,79 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  if (request.method === "POST" && photoMatch) {
+    if (!requireSession(request, response)) return;
+
+    try {
+      const body = await readBody(request);
+      const payload = JSON.parse(body || "{}");
+      const vehicles = readVehicles();
+      const index = vehicles.findIndex((vehicle) => vehicle.id === photoMatch[1]);
+
+      if (index === -1) {
+        sendJson(response, 404, { ok: false, message: "Voertuig niet gevonden" });
+        return;
+      }
+
+      const vehiclePhotoDir = path.join(PHOTOS_DIR, photoMatch[1]);
+      fs.mkdirSync(vehiclePhotoDir, { recursive: true });
+      const existingPhotos = cleanPhotos(vehicles[index].photos) || [];
+      const nextPhotos = [...existingPhotos];
+
+      for (const photo of Array.isArray(payload.photos) ? payload.photos : []) {
+        const match = String(photo.dataUrl || "").match(/^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i);
+        if (!match) continue;
+
+        const id = crypto.randomUUID();
+        const ext = photoExtension(match[1], photo.name);
+        const filename = `${id}${ext}`;
+        fs.writeFileSync(path.join(vehiclePhotoDir, filename), Buffer.from(match[2], "base64"));
+        nextPhotos.push({
+          id,
+          name: String(photo.name || filename).trim(),
+          url: `/vehicle-photos/${encodeURIComponent(photoMatch[1])}/${encodeURIComponent(filename)}`,
+          selected: false
+        });
+      }
+
+      vehicles[index].photos = nextPhotos;
+      writeVehicles(vehicles);
+      sendJson(response, 200, { ok: true, photos: nextPhotos, vehicle: vehicles[index] });
+    } catch (error) {
+      sendJson(response, 400, { ok: false, message: "Foto's konden niet worden opgeslagen" });
+    }
+    return;
+  }
+
+  if (request.method === "DELETE" && photoDeleteMatch) {
+    if (!requireSession(request, response)) return;
+
+    const vehicles = readVehicles();
+    const index = vehicles.findIndex((vehicle) => vehicle.id === photoDeleteMatch[1]);
+
+    if (index === -1) {
+      sendJson(response, 404, { ok: false, message: "Voertuig niet gevonden" });
+      return;
+    }
+
+    const photos = cleanPhotos(vehicles[index].photos) || [];
+    const photo = photos.find((item) => item.id === photoDeleteMatch[2]);
+    const nextPhotos = photos.filter((item) => item.id !== photoDeleteMatch[2]);
+
+    if (photo?.url) {
+      const filename = path.basename(decodeURIComponent(photo.url.split("/").pop() || ""));
+      const photoPath = path.join(PHOTOS_DIR, photoDeleteMatch[1], filename);
+      if (photoPath.startsWith(path.join(PHOTOS_DIR, photoDeleteMatch[1])) && fs.existsSync(photoPath)) {
+        fs.unlinkSync(photoPath);
+      }
+    }
+
+    vehicles[index].photos = nextPhotos;
+    writeVehicles(vehicles);
+    sendJson(response, 200, { ok: true, photos: nextPhotos, vehicle: vehicles[index] });
+    return;
+  }
+
   if (request.method === "DELETE" && vehicleMatch) {
     if (!requireSession(request, response)) return;
 
@@ -334,7 +591,24 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
-  const protectedPages = ["/dashboard", "/dashboard.html", "/camper-detail", "/camper-detail.html", "/todos", "/todos.html"];
+  if (servedPhotoMatch) {
+    if (!getSession(request)) {
+      response.writeHead(302, { Location: "/login.html" });
+      response.end();
+      return;
+    }
+
+    const photoPath = path.normalize(path.join(PHOTOS_DIR, servedPhotoMatch[1], servedPhotoMatch[2]));
+    if (!photoPath.startsWith(path.join(PHOTOS_DIR, servedPhotoMatch[1]))) {
+      response.writeHead(403);
+      response.end("Verboden");
+      return;
+    }
+    serveFile(response, photoPath);
+    return;
+  }
+
+  const protectedPages = ["/dashboard", "/dashboard.html", "/camper-detail", "/camper-detail.html", "/todos", "/todos.html", "/new-camper", "/new-camper.html", "/op-het-oog", "/op-het-oog.html", "/photos", "/photos.html"];
   if (protectedPages.includes(url.pathname) && !getSession(request)) {
     response.writeHead(302, { Location: "/login.html" });
     response.end();
@@ -345,6 +619,9 @@ const server = http.createServer(async (request, response) => {
     "/dashboard": "/dashboard.html",
     "/camper-detail": "/camper-detail.html",
     "/todos": "/todos.html",
+    "/new-camper": "/new-camper.html",
+    "/op-het-oog": "/op-het-oog.html",
+    "/photos": "/photos.html",
     "/login": "/login.html"
   };
   const filePath = resolvePublicPath(routeAliases[url.pathname] || url.pathname);
