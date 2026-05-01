@@ -1,14 +1,22 @@
 services:
   - type: web
     name: zeelandcamper-site
-    env: node
+    runtime: node
     plan: free
-    buildCommand: ""
+    buildCommand: npm ci
     startCommand: npm start
     envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: zeelandcamper-db
+          property: connectionString
       - key: SITE_USERNAME
         value: bram
       - key: SITE_PASSWORD
         value: "1234"
       - key: SESSION_SECRET
         generateValue: true
+
+databases:
+  - name: zeelandcamper-db
+    plan: free

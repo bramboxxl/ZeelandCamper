@@ -2,6 +2,7 @@ const crypto = require("crypto");
 const fs = require("fs");
 const http = require("http");
 const path = require("path");
+const { Pool } = require("pg");
 
 const PORT = Number(process.env.PORT || 3000);
 const USERNAME = process.env.SITE_USERNAME || "bram";
@@ -9,10 +10,19 @@ const PASSWORD = process.env.SITE_PASSWORD || "1234";
 const SESSION_SECRET = process.env.SESSION_SECRET || "change-this-secret-on-render";
 const PUBLIC_DIR = path.join(__dirname, "public");
 const DATA_DIR = path.join(__dirname, "data");
-const PHOTOS_DIR = path.join(DATA_DIR, "photos");
 const VEHICLES_FILE = path.join(DATA_DIR, "vehicles.json");
 const SESSION_MAX_AGE = 1000 * 60 * 60 * 8;
 const VEHICLE_STATUSES = ["Op het oog", "intake en contract", "staat te koop", "verkocht", "gaat niet door"];
+const DATABASE_URL = process.env.DATABASE_URL;
+
+if (!DATABASE_URL) {
+  throw new Error("DATABASE_URL is verplicht. Koppel een PostgreSQL database op Render.");
+}
+
+const pool = new Pool({
+  connectionString: DATABASE_URL,
+  ssl: /localhost|127\.0\.0\.1/i.test(DATABASE_URL) ? undefined : { rejectUnauthorized: false }
+});
 
 const sessions = new Map();
 
@@ -83,29 +93,178 @@ function createSessionToken() {
     .digest("hex");
 }
 
-function ensureDataFile() {
+function ensureSeedFile() {
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
   }
+}
 
-  if (!fs.existsSync(VEHICLES_FILE)) {
-    fs.writeFileSync(VEHICLES_FILE, "[]\n", "utf8");
-  }
+async function initDatabase() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS vehicles (
+      id TEXT PRIMARY KEY,
+      data JSONB NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
 
-  if (!fs.existsSync(PHOTOS_DIR)) {
-    fs.mkdirSync(PHOTOS_DIR, { recursive: true });
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS vehicle_photos (
+      id TEXT PRIMARY KEY,
+      vehicle_id TEXT NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      image_data BYTEA NOT NULL,
+      selected BOOLEAN NOT NULL DEFAULT FALSE,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await seedVehiclesFromJson();
+}
+
+async function seedVehiclesFromJson() {
+  const result = await pool.query("SELECT COUNT(*)::int AS count FROM vehicles");
+  if (result.rows[0].count > 0) return;
+
+  ensureSeedFile();
+  const content = fs.existsSync(VEHICLES_FILE) ? fs.readFileSync(VEHICLES_FILE, "utf8") : "[]";
+  const vehicles = JSON.parse(content || "[]");
+
+  for (const vehicle of vehicles) {
+    const normalizedVehicle = {
+      ...cleanVehicle(vehicle),
+      id: String(vehicle.id || crypto.randomUUID()),
+      todos: cleanTodos(vehicle.todos) || [],
+      photos: cleanPhotos(vehicle.photos) || [],
+      rdwFinnikData: cleanRdwFinnikData(vehicle.rdwFinnikData) || {}
+    };
+    await upsertVehicle(normalizedVehicle.id, normalizedVehicle);
   }
 }
 
-function readVehicles() {
-  ensureDataFile();
-  const content = fs.readFileSync(VEHICLES_FILE, "utf8");
-  return JSON.parse(content || "[]");
+async function readVehicles() {
+  const result = await pool.query("SELECT id, data FROM vehicles ORDER BY created_at DESC");
+  const vehicles = result.rows.map((row) => ({
+    id: row.id,
+    ...row.data
+  }));
+  await attachPhotos(vehicles);
+  return vehicles;
 }
 
-function writeVehicles(vehicles) {
-  ensureDataFile();
-  fs.writeFileSync(VEHICLES_FILE, `${JSON.stringify(vehicles, null, 2)}\n`, "utf8");
+async function readVehicle(id) {
+  const result = await pool.query("SELECT id, data FROM vehicles WHERE id = $1", [id]);
+  if (!result.rows.length) return null;
+  const vehicle = {
+    id: result.rows[0].id,
+    ...result.rows[0].data
+  };
+  await attachPhotos([vehicle]);
+  return vehicle;
+}
+
+async function upsertVehicle(id, vehicle) {
+  const data = { ...vehicle };
+  delete data.id;
+  delete data.photos;
+  await pool.query(
+    `
+      INSERT INTO vehicles (id, data, created_at, updated_at)
+      VALUES ($1, $2::jsonb, NOW(), NOW())
+      ON CONFLICT (id)
+      DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()
+    `,
+    [id, JSON.stringify(data)]
+  );
+  return readVehicle(id);
+}
+
+async function deleteVehicle(id) {
+  const result = await pool.query("DELETE FROM vehicles WHERE id = $1", [id]);
+  return result.rowCount > 0;
+}
+
+async function attachPhotos(vehicles) {
+  if (!vehicles.length) return;
+
+  const ids = vehicles.map((vehicle) => vehicle.id);
+  const result = await pool.query(
+    `
+      SELECT id, vehicle_id, name, selected, sort_order
+      FROM vehicle_photos
+      WHERE vehicle_id = ANY($1)
+      ORDER BY sort_order ASC, created_at ASC
+    `,
+    [ids]
+  );
+  const photosByVehicle = new Map(ids.map((id) => [id, []]));
+
+  for (const row of result.rows) {
+    photosByVehicle.get(row.vehicle_id)?.push({
+      id: row.id,
+      name: row.name,
+      url: `/vehicle-photos/${encodeURIComponent(row.vehicle_id)}/${encodeURIComponent(row.id)}`,
+      selected: row.selected
+    });
+  }
+
+  for (const vehicle of vehicles) {
+    vehicle.photos = photosByVehicle.get(vehicle.id) || [];
+  }
+}
+
+async function replacePhotoState(vehicleId, photos) {
+  for (const [index, photo] of photos.entries()) {
+    await pool.query(
+      `
+        UPDATE vehicle_photos
+        SET selected = $1, sort_order = $2, name = COALESCE(NULLIF($3, ''), name)
+        WHERE id = $4 AND vehicle_id = $5
+      `,
+      [Boolean(photo.selected), index, String(photo.name || "").trim(), photo.id, vehicleId]
+    );
+  }
+}
+
+async function addVehiclePhotos(vehicleId, photos) {
+  const existingCount = await pool.query("SELECT COUNT(*)::int AS count FROM vehicle_photos WHERE vehicle_id = $1", [vehicleId]);
+  let sortOrder = existingCount.rows[0].count;
+  const nextPhotos = [];
+
+  for (const photo of Array.isArray(photos) ? photos : []) {
+    const match = String(photo.dataUrl || "").match(/^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i);
+    if (!match) continue;
+
+    const id = crypto.randomUUID();
+    const name = String(photo.name || `foto-${sortOrder + 1}${photoExtension(match[1])}`).trim();
+    await pool.query(
+      `
+        INSERT INTO vehicle_photos (id, vehicle_id, name, mime_type, image_data, selected, sort_order)
+        VALUES ($1, $2, $3, $4, $5, FALSE, $6)
+      `,
+      [id, vehicleId, name, match[1], Buffer.from(match[2], "base64"), sortOrder]
+    );
+    nextPhotos.push(id);
+    sortOrder += 1;
+  }
+
+  return nextPhotos;
+}
+
+async function deleteVehiclePhoto(vehicleId, photoId) {
+  const result = await pool.query("DELETE FROM vehicle_photos WHERE vehicle_id = $1 AND id = $2", [vehicleId, photoId]);
+  return result.rowCount > 0;
+}
+
+async function readVehiclePhoto(vehicleId, photoId) {
+  const result = await pool.query(
+    "SELECT name, mime_type, image_data FROM vehicle_photos WHERE vehicle_id = $1 AND id = $2",
+    [vehicleId, photoId]
+  );
+  return result.rows[0] || null;
 }
 
 function cleanTodos(value) {
@@ -421,8 +580,12 @@ const server = http.createServer(async (request, response) => {
   }
 
   if (request.method === "GET" && url.pathname === "/api/vehicles") {
-    const vehicles = readVehicles();
-    sendJson(response, 200, { vehicles });
+    try {
+      const vehicles = await readVehicles();
+      sendJson(response, 200, { vehicles });
+    } catch (error) {
+      sendJson(response, 500, { ok: false, message: "Voertuigen konden niet worden geladen" });
+    }
     return;
   }
 
@@ -454,16 +617,15 @@ const server = http.createServer(async (request, response) => {
         return;
       }
 
-      const vehicles = readVehicles();
       const newVehicle = {
         id: crypto.randomUUID(),
         todos: [],
         photos: [],
+        rdwFinnikData: {},
         ...vehicle
       };
-      vehicles.unshift(newVehicle);
-      writeVehicles(vehicles);
-      sendJson(response, 201, { ok: true, vehicle: newVehicle });
+      const savedVehicle = await upsertVehicle(newVehicle.id, newVehicle);
+      sendJson(response, 201, { ok: true, vehicle: savedVehicle });
     } catch (error) {
       sendJson(response, 400, { ok: false, message: "Voertuig kon niet worden opgeslagen" });
     }
@@ -475,21 +637,26 @@ const server = http.createServer(async (request, response) => {
 
     try {
       const body = await readBody(request);
-      const updates = cleanVehicle(JSON.parse(body || "{}"));
-      const vehicles = readVehicles();
-      const index = vehicles.findIndex((vehicle) => vehicle.id === vehicleMatch[1]);
+      const rawUpdates = JSON.parse(body || "{}");
+      const updates = cleanVehicle(rawUpdates);
+      const vehicle = await readVehicle(vehicleMatch[1]);
 
-      if (index === -1) {
+      if (!vehicle) {
         sendJson(response, 404, { ok: false, message: "Voertuig niet gevonden" });
         return;
       }
 
-      vehicles[index] = {
-        ...vehicles[index],
+      if (updates.photos !== undefined) {
+        await replacePhotoState(vehicle.id, updates.photos);
+      }
+
+      const nextVehicle = {
+        ...vehicle,
         ...updates
       };
-      writeVehicles(vehicles);
-      sendJson(response, 200, { ok: true, vehicle: vehicles[index] });
+      delete nextVehicle.photos;
+      const savedVehicle = await upsertVehicle(vehicle.id, nextVehicle);
+      sendJson(response, 200, { ok: true, vehicle: savedVehicle });
     } catch (error) {
       sendJson(response, 400, { ok: false, message: "Voertuig kon niet worden bijgewerkt" });
     }
@@ -502,38 +669,16 @@ const server = http.createServer(async (request, response) => {
     try {
       const body = await readBody(request);
       const payload = JSON.parse(body || "{}");
-      const vehicles = readVehicles();
-      const index = vehicles.findIndex((vehicle) => vehicle.id === photoMatch[1]);
+      const vehicle = await readVehicle(photoMatch[1]);
 
-      if (index === -1) {
+      if (!vehicle) {
         sendJson(response, 404, { ok: false, message: "Voertuig niet gevonden" });
         return;
       }
 
-      const vehiclePhotoDir = path.join(PHOTOS_DIR, photoMatch[1]);
-      fs.mkdirSync(vehiclePhotoDir, { recursive: true });
-      const existingPhotos = cleanPhotos(vehicles[index].photos) || [];
-      const nextPhotos = [...existingPhotos];
-
-      for (const photo of Array.isArray(payload.photos) ? payload.photos : []) {
-        const match = String(photo.dataUrl || "").match(/^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i);
-        if (!match) continue;
-
-        const id = crypto.randomUUID();
-        const ext = photoExtension(match[1], photo.name);
-        const filename = `${id}${ext}`;
-        fs.writeFileSync(path.join(vehiclePhotoDir, filename), Buffer.from(match[2], "base64"));
-        nextPhotos.push({
-          id,
-          name: String(photo.name || filename).trim(),
-          url: `/vehicle-photos/${encodeURIComponent(photoMatch[1])}/${encodeURIComponent(filename)}`,
-          selected: false
-        });
-      }
-
-      vehicles[index].photos = nextPhotos;
-      writeVehicles(vehicles);
-      sendJson(response, 200, { ok: true, photos: nextPhotos, vehicle: vehicles[index] });
+      await addVehiclePhotos(vehicle.id, payload.photos);
+      const savedVehicle = await readVehicle(vehicle.id);
+      sendJson(response, 200, { ok: true, photos: savedVehicle.photos, vehicle: savedVehicle });
     } catch (error) {
       sendJson(response, 400, { ok: false, message: "Foto's konden niet worden opgeslagen" });
     }
@@ -543,45 +688,42 @@ const server = http.createServer(async (request, response) => {
   if (request.method === "DELETE" && photoDeleteMatch) {
     if (!requireSession(request, response)) return;
 
-    const vehicles = readVehicles();
-    const index = vehicles.findIndex((vehicle) => vehicle.id === photoDeleteMatch[1]);
+    try {
+      const vehicle = await readVehicle(photoDeleteMatch[1]);
 
-    if (index === -1) {
-      sendJson(response, 404, { ok: false, message: "Voertuig niet gevonden" });
-      return;
-    }
-
-    const photos = cleanPhotos(vehicles[index].photos) || [];
-    const photo = photos.find((item) => item.id === photoDeleteMatch[2]);
-    const nextPhotos = photos.filter((item) => item.id !== photoDeleteMatch[2]);
-
-    if (photo?.url) {
-      const filename = path.basename(decodeURIComponent(photo.url.split("/").pop() || ""));
-      const photoPath = path.join(PHOTOS_DIR, photoDeleteMatch[1], filename);
-      if (photoPath.startsWith(path.join(PHOTOS_DIR, photoDeleteMatch[1])) && fs.existsSync(photoPath)) {
-        fs.unlinkSync(photoPath);
+      if (!vehicle) {
+        sendJson(response, 404, { ok: false, message: "Voertuig niet gevonden" });
+        return;
       }
-    }
 
-    vehicles[index].photos = nextPhotos;
-    writeVehicles(vehicles);
-    sendJson(response, 200, { ok: true, photos: nextPhotos, vehicle: vehicles[index] });
+      const deleted = await deleteVehiclePhoto(vehicle.id, photoDeleteMatch[2]);
+      if (!deleted) {
+        sendJson(response, 404, { ok: false, message: "Foto niet gevonden" });
+        return;
+      }
+
+      const savedVehicle = await readVehicle(vehicle.id);
+      sendJson(response, 200, { ok: true, photos: savedVehicle.photos, vehicle: savedVehicle });
+    } catch (error) {
+      sendJson(response, 400, { ok: false, message: "Foto kon niet worden verwijderd" });
+    }
     return;
   }
 
   if (request.method === "DELETE" && vehicleMatch) {
     if (!requireSession(request, response)) return;
 
-    const vehicles = readVehicles();
-    const nextVehicles = vehicles.filter((vehicle) => vehicle.id !== vehicleMatch[1]);
+    try {
+      const deleted = await deleteVehicle(vehicleMatch[1]);
+      if (!deleted) {
+        sendJson(response, 404, { ok: false, message: "Voertuig niet gevonden" });
+        return;
+      }
 
-    if (nextVehicles.length === vehicles.length) {
-      sendJson(response, 404, { ok: false, message: "Voertuig niet gevonden" });
-      return;
+      sendJson(response, 200, { ok: true });
+    } catch (error) {
+      sendJson(response, 400, { ok: false, message: "Voertuig kon niet worden verwijderd" });
     }
-
-    writeVehicles(nextVehicles);
-    sendJson(response, 200, { ok: true });
     return;
   }
 
@@ -598,13 +740,22 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
-    const photoPath = path.normalize(path.join(PHOTOS_DIR, servedPhotoMatch[1], servedPhotoMatch[2]));
-    if (!photoPath.startsWith(path.join(PHOTOS_DIR, servedPhotoMatch[1]))) {
-      response.writeHead(403);
-      response.end("Verboden");
-      return;
+    try {
+      const photo = await readVehiclePhoto(servedPhotoMatch[1], servedPhotoMatch[2]);
+      if (!photo) {
+        response.writeHead(404);
+        response.end("Niet gevonden");
+        return;
+      }
+      response.writeHead(200, {
+        "Content-Type": photo.mime_type,
+        "Cache-Control": "private, max-age=3600"
+      });
+      response.end(photo.image_data);
+    } catch (error) {
+      response.writeHead(500);
+      response.end("Foto kon niet worden geladen");
     }
-    serveFile(response, photoPath);
     return;
   }
 
@@ -634,6 +785,13 @@ const server = http.createServer(async (request, response) => {
   serveFile(response, filePath);
 });
 
-server.listen(PORT, () => {
-  console.log(`ZeelandCamper draait op http://localhost:${PORT}`);
-});
+initDatabase()
+  .then(() => {
+    server.listen(PORT, () => {
+      console.log(`ZeelandCamper draait op http://localhost:${PORT}`);
+    });
+  })
+  .catch((error) => {
+    console.error("Database initialisatie mislukt:", error);
+    process.exit(1);
+  });
