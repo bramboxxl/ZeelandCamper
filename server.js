@@ -101,7 +101,7 @@ function ensureSeedFile() {
 
 async function initDatabase() {
   await pool.query(`
-    CREATE TABLE IF NOT EXISTS vehicles (
+    CREATE TABLE IF NOT EXISTS zeelandcamper_vehicles (
       id TEXT PRIMARY KEY,
       data JSONB NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -110,9 +110,9 @@ async function initDatabase() {
   `);
 
   await pool.query(`
-    CREATE TABLE IF NOT EXISTS vehicle_photos (
+    CREATE TABLE IF NOT EXISTS zeelandcamper_vehicle_photos (
       id TEXT PRIMARY KEY,
-      vehicle_id TEXT NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
+      vehicle_id TEXT NOT NULL REFERENCES zeelandcamper_vehicles(id) ON DELETE CASCADE,
       name TEXT NOT NULL,
       mime_type TEXT NOT NULL,
       image_data BYTEA NOT NULL,
@@ -126,7 +126,7 @@ async function initDatabase() {
 }
 
 async function seedVehiclesFromJson() {
-  const result = await pool.query("SELECT COUNT(*)::int AS count FROM vehicles");
+  const result = await pool.query("SELECT COUNT(*)::int AS count FROM zeelandcamper_vehicles");
   if (result.rows[0].count > 0) return;
 
   ensureSeedFile();
@@ -146,7 +146,7 @@ async function seedVehiclesFromJson() {
 }
 
 async function readVehicles() {
-  const result = await pool.query("SELECT id, data FROM vehicles ORDER BY created_at DESC");
+  const result = await pool.query("SELECT id, data FROM zeelandcamper_vehicles ORDER BY created_at DESC");
   const vehicles = result.rows.map((row) => ({
     id: row.id,
     ...row.data
@@ -156,7 +156,7 @@ async function readVehicles() {
 }
 
 async function readVehicle(id) {
-  const result = await pool.query("SELECT id, data FROM vehicles WHERE id = $1", [id]);
+  const result = await pool.query("SELECT id, data FROM zeelandcamper_vehicles WHERE id = $1", [id]);
   if (!result.rows.length) return null;
   const vehicle = {
     id: result.rows[0].id,
@@ -172,7 +172,7 @@ async function upsertVehicle(id, vehicle) {
   delete data.photos;
   await pool.query(
     `
-      INSERT INTO vehicles (id, data, created_at, updated_at)
+      INSERT INTO zeelandcamper_vehicles (id, data, created_at, updated_at)
       VALUES ($1, $2::jsonb, NOW(), NOW())
       ON CONFLICT (id)
       DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()
@@ -183,7 +183,7 @@ async function upsertVehicle(id, vehicle) {
 }
 
 async function deleteVehicle(id) {
-  const result = await pool.query("DELETE FROM vehicles WHERE id = $1", [id]);
+  const result = await pool.query("DELETE FROM zeelandcamper_vehicles WHERE id = $1", [id]);
   return result.rowCount > 0;
 }
 
@@ -194,7 +194,7 @@ async function attachPhotos(vehicles) {
   const result = await pool.query(
     `
       SELECT id, vehicle_id, name, selected, sort_order
-      FROM vehicle_photos
+      FROM zeelandcamper_vehicle_photos
       WHERE vehicle_id = ANY($1)
       ORDER BY sort_order ASC, created_at ASC
     `,
@@ -220,7 +220,7 @@ async function replacePhotoState(vehicleId, photos) {
   for (const [index, photo] of photos.entries()) {
     await pool.query(
       `
-        UPDATE vehicle_photos
+        UPDATE zeelandcamper_vehicle_photos
         SET selected = $1, sort_order = $2, name = COALESCE(NULLIF($3, ''), name)
         WHERE id = $4 AND vehicle_id = $5
       `,
@@ -230,7 +230,7 @@ async function replacePhotoState(vehicleId, photos) {
 }
 
 async function addVehiclePhotos(vehicleId, photos) {
-  const existingCount = await pool.query("SELECT COUNT(*)::int AS count FROM vehicle_photos WHERE vehicle_id = $1", [vehicleId]);
+  const existingCount = await pool.query("SELECT COUNT(*)::int AS count FROM zeelandcamper_vehicle_photos WHERE vehicle_id = $1", [vehicleId]);
   let sortOrder = existingCount.rows[0].count;
   const nextPhotos = [];
 
@@ -242,7 +242,7 @@ async function addVehiclePhotos(vehicleId, photos) {
     const name = String(photo.name || `foto-${sortOrder + 1}${photoExtension(match[1])}`).trim();
     await pool.query(
       `
-        INSERT INTO vehicle_photos (id, vehicle_id, name, mime_type, image_data, selected, sort_order)
+        INSERT INTO zeelandcamper_vehicle_photos (id, vehicle_id, name, mime_type, image_data, selected, sort_order)
         VALUES ($1, $2, $3, $4, $5, FALSE, $6)
       `,
       [id, vehicleId, name, match[1], Buffer.from(match[2], "base64"), sortOrder]
@@ -255,13 +255,13 @@ async function addVehiclePhotos(vehicleId, photos) {
 }
 
 async function deleteVehiclePhoto(vehicleId, photoId) {
-  const result = await pool.query("DELETE FROM vehicle_photos WHERE vehicle_id = $1 AND id = $2", [vehicleId, photoId]);
+  const result = await pool.query("DELETE FROM zeelandcamper_vehicle_photos WHERE vehicle_id = $1 AND id = $2", [vehicleId, photoId]);
   return result.rowCount > 0;
 }
 
 async function readVehiclePhoto(vehicleId, photoId) {
   const result = await pool.query(
-    "SELECT name, mime_type, image_data FROM vehicle_photos WHERE vehicle_id = $1 AND id = $2",
+    "SELECT name, mime_type, image_data FROM zeelandcamper_vehicle_photos WHERE vehicle_id = $1 AND id = $2",
     [vehicleId, photoId]
   );
   return result.rows[0] || null;
