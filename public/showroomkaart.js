@@ -12,6 +12,7 @@
   const button = document.querySelector("#showroom-submit");
   const message = document.querySelector("#showroom-message");
   const params = new URLSearchParams(window.location.search);
+  let selectedVehicleId = "";
 
   await prefillLicensePlate(params);
 
@@ -20,7 +21,7 @@
     await downloadShowroomCard();
   });
 
-  if (input.value.trim()) {
+  if (input.value.trim() || selectedVehicleId) {
     await downloadShowroomCard();
   }
 
@@ -36,7 +37,8 @@
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          licensePlate: normalizeLicensePlate(input.value)
+          licensePlate: normalizeLicensePlate(input.value),
+          vehicleId: selectedVehicleId
         })
       });
 
@@ -72,6 +74,7 @@
 
     const vehicleId = params.get("id");
     if (!vehicleId) return;
+    selectedVehicleId = vehicleId;
 
     try {
       const response = await fetch("/api/vehicles");

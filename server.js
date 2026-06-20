@@ -580,6 +580,8 @@ async function mobiloxFetchJson(cookie, pathName, options = {}) {
 function getMobiloxProductId(vehicle) {
   const fromField = String(vehicle.mobiloxId || "").replace(/[^\d]/g, "");
   if (fromField) return fromField;
+  const fromId = String(vehicle.id || "").match(/(?:mobilox-)?(\d+)/i)?.[1] || "";
+  if (fromId) return fromId;
   const fromUrl = String(vehicle.mobiloxUrl || "").match(/\/(\d+)-[^/]+$/)?.[1] || "";
   if (fromUrl) return fromUrl;
   return "";
@@ -621,9 +623,11 @@ async function fetchMobiloxPreview(vehicle) {
 }
 
 function normalizePreviewHtml(html) {
-  const withHeadingBreaks = String(html || "").replace(/<(strong|b)[^>]*>([\s\S]*?)<\/\1>/gi, (match, tag, inner) => {
+  const withHeadingBreaks = String(html || "").replace(/<(strong|b)[^>]*>([\s\S]*?)<\/\1>/gi, (match, tag, inner, offset, source) => {
     const text = decodeHtml(String(inner || "").replace(/<[^>]+>/g, "")).trim();
-    const isHeading = text && text.length <= 42 && !/[0-9€:]/.test(text);
+    const after = String(source || "").slice(offset + match.length, offset + match.length + 24);
+    const isLabel = /^\s*(?:&nbsp;|\u00a0)*\s*:/i.test(after);
+    const isHeading = text && text.length <= 42 && !/[0-9€:]/.test(text) && !isLabel;
     return isHeading ? `${inner}\n` : inner;
   });
 
@@ -647,6 +651,7 @@ function normalizePreviewHtml(html) {
     .replace(/&gt;/g, ">")
     .replace(/&ndash;/g, "-")
     .replace(/\u00a0/g, " ")
+    .replace(/\n+\s*:\s*/g, ": ")
     .replace(/([.!?])([A-ZÀ-Ý][a-zà-ÿ])/g, "$1\n$2")
     .replace(/[ \t]{2,}/g, " ")
     .replace(/[ \t]+\n/g, "\n")
@@ -725,9 +730,9 @@ function formatDisplayPrice(value) {
 }
 
 async function createShowroomCardDocx(licensePlate) {
-  const vehicle = await findVehicleByLicensePlate(licensePlate);
+  const vehicle = await findVehicleForShowroom(licensePlate);
   if (!vehicle) {
-    const error = new Error("Geen camper gevonden met dit kenteken");
+    const error = new Error("Geen camper gevonden voor deze showroomkaart");
     error.status = 404;
     throw error;
   }
@@ -751,12 +756,32 @@ async function createShowroomCardDocx(licensePlate) {
     },
     image
   });
-  const fileBase = `${normalizeLicensePlateKey(vehicle.licensePlate || licensePlate)} showroomkaart`;
+  const fileLicensePlate = normalizeLicensePlateKey(vehicle.licensePlate || licensePlate || extractLicensePlateFromPreview(preview.text));
+  const fileBase = `${fileLicensePlate || getMobiloxProductId(vehicle) || "camper"} showroomkaart`;
 
   return {
     fileName: `${fileBase}.docx`,
     buffer: docx
   };
+}
+
+async function findVehicleForShowroom(input) {
+  if (input && typeof input === "object") {
+    const vehicleId = String(input.vehicleId || input.id || "").trim();
+    if (vehicleId) {
+      const vehicle = await readVehicle(vehicleId);
+      if (vehicle) return vehicle;
+    }
+
+    return findVehicleByLicensePlate(input.licensePlate);
+  }
+
+  return findVehicleByLicensePlate(input);
+}
+
+function extractLicensePlateFromPreview(text) {
+  const match = String(text || "").match(/\bKenteken:\s*([A-Z0-9-]+)/i);
+  return match?.[1] || "";
 }
 
 function buildShowroomDocx({ vehicle, detail, image }) {
@@ -1394,7 +1419,10 @@ const server = http.createServer(async (request, response) => {
     try {
       const body = await readBody(request);
       const payload = JSON.parse(body || "{}");
-      const result = await createShowroomCardDocx(payload.licensePlate);
+      const result = await createShowroomCardDocx({
+        licensePlate: payload.licensePlate,
+        vehicleId: payload.vehicleId
+      });
 
       response.writeHead(200, {
         "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
