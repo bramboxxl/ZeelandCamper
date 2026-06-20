@@ -114,8 +114,7 @@ async function downloadShowroomCard(payload, button) {
     }
 
     if (!response.ok) {
-      const result = await response.json().catch(() => ({}));
-      throw new Error(result.message || "Showroomkaart maken mislukt");
+      throw new Error(await responseErrorMessage(response));
     }
 
     const blob = await response.blob();
@@ -133,6 +132,18 @@ async function downloadShowroomCard(payload, button) {
   } finally {
     button.disabled = false;
     button.textContent = originalText;
+  }
+}
+
+async function responseErrorMessage(response) {
+  const text = await response.text().catch(() => "");
+  if (!text) return `Showroomkaart maken mislukt (${response.status})`;
+
+  try {
+    const result = JSON.parse(text);
+    return result.message || `Showroomkaart maken mislukt (${response.status})`;
+  } catch {
+    return text.slice(0, 240) || `Showroomkaart maken mislukt (${response.status})`;
   }
 }
 

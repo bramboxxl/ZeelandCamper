@@ -601,6 +601,11 @@ async function fetchMobiloxPreview(vehicle, credentials = {}) {
 
   const cookie = await mobiloxLogin(credentials);
   const product = await mobiloxFetchJson(cookie, `products/${encodeURIComponent(productId)}`);
+  if (!product || typeof product !== "object") {
+    const error = new Error("Mobilox voertuig kon niet worden opgehaald. Controleer de Mobilox inlog.");
+    error.status = 502;
+    throw error;
+  }
   const advertisement = product.advertisement;
   const locale = advertisement?.locales?.[0] || "nl_NL";
 
