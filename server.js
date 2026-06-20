@@ -826,7 +826,8 @@ function buildShowroomDocx({ vehicle, detail, image }) {
     });
   }
 
-  const sectPr = adjustSectPrMargins(extractSectPr(template.get(documentPath)?.data?.toString("utf8") || "") || defaultSectPr());
+  const originalDocumentXml = template.get(documentPath)?.data?.toString("utf8") || documentXml(defaultSectPr());
+  const sectPr = extractSectPr(originalDocumentXml) || defaultSectPr();
   const imageSize = image?.buffer?.length ? fitImageSize(image.buffer, 5486400, 2350000) : null;
   const imageXml = imageSize ? imageDrawingXml(relId, imageSize.cx, imageSize.cy) : "";
 
@@ -840,7 +841,7 @@ function buildShowroomDocx({ vehicle, detail, image }) {
   ].join("");
 
   template.set(documentPath, {
-    data: Buffer.from(documentXml(bodyXml)),
+    data: Buffer.from(replaceDocumentBodyContent(originalDocumentXml, bodyXml)),
     method: 0
   });
 
@@ -1101,10 +1102,12 @@ function extractSectPr(documentXmlText) {
   return documentXmlText.match(/<w:sectPr[\s\S]*<\/w:sectPr>/)?.[0] || "";
 }
 
-function adjustSectPrMargins(sectPr) {
-  const margin = '<w:pgMar w:top="2300" w:right="900" w:bottom="1300" w:left="900" w:header="450" w:footer="450" w:gutter="0"/>';
-  if (/<w:pgMar\b[^>]*\/>/.test(sectPr)) return sectPr.replace(/<w:pgMar\b[^>]*\/>/, margin);
-  return sectPr.replace("</w:sectPr>", `${margin}</w:sectPr>`);
+function replaceDocumentBodyContent(originalDocumentXml, bodyXml) {
+  const xml = String(originalDocumentXml || "");
+  const bodyMatch = xml.match(/<w:body>([\s\S]*)<\/w:body>/);
+  if (!bodyMatch) return documentXml(bodyXml);
+
+  return xml.replace(/<w:body>[\s\S]*<\/w:body>/, `<w:body>${bodyXml}</w:body>`);
 }
 
 function defaultSectPr() {
