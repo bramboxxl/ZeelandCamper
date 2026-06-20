@@ -514,16 +514,20 @@ function parseSetCookie(header) {
     .join("; ");
 }
 
-async function mobiloxLogin() {
-  if (!MOBILOX_EMAIL || !MOBILOX_PASSWORD) {
+async function mobiloxLogin(credentials = {}) {
+  const email = String(credentials.email || MOBILOX_EMAIL || "").trim();
+  const password = String(credentials.password || MOBILOX_PASSWORD || "");
+
+  if (!email || !password) {
     const error = new Error("MOBILOX_EMAIL en MOBILOX_PASSWORD zijn nodig voor de Mobilox Voorbeeld-tekst");
+    error.code = "missing_mobilox_credentials";
     error.status = 500;
     throw error;
   }
 
   const body = new URLSearchParams({
-    _username: MOBILOX_EMAIL,
-    _password: MOBILOX_PASSWORD,
+    _username: email,
+    _password: password,
     _remember_me: "on"
   });
   const response = await fetch("https://api.mobilox.nl/login?redirect_to=https%3A%2F%2Fmembers.mobilox.nl%2F&redirect_failure=https%3A%2F%2Fmembers.mobilox.nl%2Flogin", {
@@ -587,7 +591,7 @@ function getMobiloxProductId(vehicle) {
   return "";
 }
 
-async function fetchMobiloxPreview(vehicle) {
+async function fetchMobiloxPreview(vehicle, credentials = {}) {
   const productId = getMobiloxProductId(vehicle);
   if (!productId) {
     const error = new Error("Geen Mobilox product-id gevonden voor deze camper");
@@ -595,7 +599,7 @@ async function fetchMobiloxPreview(vehicle) {
     throw error;
   }
 
-  const cookie = await mobiloxLogin();
+  const cookie = await mobiloxLogin(credentials);
   const product = await mobiloxFetchJson(cookie, `products/${encodeURIComponent(productId)}`);
   const advertisement = product.advertisement;
   const locale = advertisement?.locales?.[0] || "nl_NL";
@@ -729,15 +733,15 @@ function formatDisplayPrice(value) {
   }).format(number);
 }
 
-async function createShowroomCardDocx(licensePlate) {
-  const vehicle = await findVehicleForShowroom(licensePlate);
+async function createShowroomCardDocx(input) {
+  const vehicle = await findVehicleForShowroom(input);
   if (!vehicle) {
     const error = new Error("Geen camper gevonden voor deze showroomkaart");
     error.status = 404;
     throw error;
   }
 
-  const preview = await fetchMobiloxPreview(vehicle);
+  const preview = await fetchMobiloxPreview(vehicle, input?.mobiloxCredentials);
   if (!preview.text) {
     const error = new Error("Geen tekst gevonden in het Mobilox Voorbeeld-scherm");
     error.status = 422;
@@ -756,7 +760,8 @@ async function createShowroomCardDocx(licensePlate) {
     },
     image
   });
-  const fileLicensePlate = normalizeLicensePlateKey(vehicle.licensePlate || licensePlate || extractLicensePlateFromPreview(preview.text));
+  const requestedLicensePlate = input && typeof input === "object" ? input.licensePlate : input;
+  const fileLicensePlate = normalizeLicensePlateKey(vehicle.licensePlate || requestedLicensePlate || extractLicensePlateFromPreview(preview.text));
   const fileBase = `${fileLicensePlate || getMobiloxProductId(vehicle) || "camper"} showroomkaart`;
 
   return {
@@ -1421,7 +1426,8 @@ const server = http.createServer(async (request, response) => {
       const payload = JSON.parse(body || "{}");
       const result = await createShowroomCardDocx({
         licensePlate: payload.licensePlate,
-        vehicleId: payload.vehicleId
+        vehicleId: payload.vehicleId,
+        mobiloxCredentials: payload.mobiloxCredentials
       });
 
       response.writeHead(200, {
@@ -1433,6 +1439,7 @@ const server = http.createServer(async (request, response) => {
     } catch (error) {
       sendJson(response, error.status || 500, {
         ok: false,
+        code: error.code || "",
         message: error.message || "Showroomkaart kon niet worden gemaakt"
       });
     }

@@ -1,3 +1,5 @@
+let mobiloxCredentials = null;
+
 (async () => {
   const loginLink = document.querySelector(".nav-button[href='/login.html']");
 
@@ -101,16 +103,15 @@ async function downloadShowroomCard(payload, button) {
   button.textContent = "Showroomkaart maken...";
 
   try {
-    const response = await fetch("/api/showroomkaart", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        vehicleId: payload.vehicleId,
-        licensePlate: normalizeLicensePlate(payload.licensePlate)
-      })
-    });
+    let response = await requestShowroomCard(payload);
+
+    if (!response.ok) {
+      const result = await response.json().catch(() => ({}));
+      if (result.code === "missing_mobilox_credentials") {
+        mobiloxCredentials = await askMobiloxCredentials();
+        response = await requestShowroomCard(payload);
+      }
+    }
 
     if (!response.ok) {
       const result = await response.json().catch(() => ({}));
@@ -133,6 +134,68 @@ async function downloadShowroomCard(payload, button) {
     button.disabled = false;
     button.textContent = originalText;
   }
+}
+
+function requestShowroomCard(payload) {
+  return fetch("/api/showroomkaart", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      vehicleId: payload.vehicleId,
+      licensePlate: normalizeLicensePlate(payload.licensePlate),
+      mobiloxCredentials
+    })
+  });
+}
+
+function askMobiloxCredentials() {
+  return new Promise((resolve, reject) => {
+    const backdrop = document.createElement("div");
+    backdrop.setAttribute("role", "dialog");
+    backdrop.setAttribute("aria-modal", "true");
+    backdrop.innerHTML = `
+      <form style="position:fixed;inset:0;z-index:9999;display:grid;place-items:center;background:rgba(6,2,80,.45);padding:20px;">
+        <div style="width:min(460px,100%);background:#fff;border-radius:8px;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.25);">
+          <h2 style="margin:0 0 10px;color:#060250;font-size:24px;">Mobilox inloggen</h2>
+          <p style="margin:0 0 18px;line-height:1.45;">Vul de Mobilox inlog in om de Voorbeeld-tekst op te halen.</p>
+          <label style="display:block;font-weight:700;margin-bottom:12px;">E-mail
+            <input name="email" type="email" autocomplete="username" required style="display:block;width:100%;box-sizing:border-box;margin-top:6px;padding:12px;border:1px solid #cfd8e3;border-radius:6px;font:inherit;">
+          </label>
+          <label style="display:block;font-weight:700;margin-bottom:18px;">Wachtwoord
+            <input name="password" type="password" autocomplete="current-password" required style="display:block;width:100%;box-sizing:border-box;margin-top:6px;padding:12px;border:1px solid #cfd8e3;border-radius:6px;font:inherit;">
+          </label>
+          <div style="display:flex;gap:10px;justify-content:flex-end;">
+            <button type="button" data-cancel style="padding:12px 18px;border:1px solid #060250;border-radius:6px;background:#fff;color:#060250;font-weight:700;">Annuleren</button>
+            <button type="submit" style="padding:12px 18px;border:1px solid #060250;border-radius:6px;background:#060250;color:#fff;font-weight:700;">Doorgaan</button>
+          </div>
+        </div>
+      </form>
+    `;
+    const form = backdrop.querySelector("form");
+    const email = form.elements.email;
+    const password = form.elements.password;
+    const close = () => backdrop.remove();
+
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const credentials = {
+        email: email.value.trim(),
+        password: password.value
+      };
+      close();
+      resolve(credentials);
+    });
+
+    form.querySelector("[data-cancel]").addEventListener("click", () => {
+      close();
+      reject(new Error("Mobilox inloggen geannuleerd"));
+    });
+
+    document.body.appendChild(backdrop);
+    email.focus();
+  });
 }
 
 function getDownloadFileName(header) {
