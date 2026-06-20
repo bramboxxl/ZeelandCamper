@@ -39,10 +39,10 @@
 
     grid.innerHTML = vehicles.map((vehicle, index) => {
       const photo = firstVehiclePhoto(vehicle);
-      const showroomUrl = showroomkaartHref(vehicle);
+      const licensePlate = normalizeLicensePlate(vehicle.licensePlate);
 
       return `
-        <article class="camper-card showroom-select-card" data-showroom-url="${escapeHtml(showroomUrl)}">
+        <article class="camper-card showroom-select-card" data-vehicle-id="${escapeHtml(vehicle.id || "")}" data-license-plate="${escapeHtml(licensePlate)}">
           ${photo
             ? `<img class="vehicle-photo" src="${escapeHtml(photo)}" alt="${escapeHtml(vehicle.title)}">`
             : `<div class="camper-image camper-image-${(index % 3) + 1}"></div>`}
@@ -59,10 +59,16 @@
     }).join("");
 
     grid.addEventListener("click", (event) => {
-      const card = event.target.closest(".showroom-select-card");
+      const button = event.target.closest(".showroom-card-button");
+      if (!button) return;
+
+      const card = button.closest(".showroom-select-card");
       if (!card) return;
 
-      window.location.href = card.dataset.showroomUrl;
+      downloadShowroomCard({
+        vehicleId: card.dataset.vehicleId || "",
+        licensePlate: card.dataset.licensePlate || ""
+      }, button);
     });
   } catch {
     grid.innerHTML = `
@@ -85,14 +91,54 @@ function firstVehiclePhoto(vehicle) {
   return vehicle.imageUrl || "";
 }
 
-function showroomkaartHref(vehicle) {
-  const licensePlate = normalizeLicensePlate(vehicle?.licensePlate);
-  if (licensePlate) return `/showroomkaart.html?kenteken=${encodeURIComponent(licensePlate)}`;
-  return `/showroomkaart.html?id=${encodeURIComponent(vehicle?.id || "")}`;
-}
-
 function normalizeLicensePlate(value) {
   return String(value || "").replace(/[^a-z0-9]/gi, "").toUpperCase();
+}
+
+async function downloadShowroomCard(payload, button) {
+  const originalText = button.textContent;
+  button.disabled = true;
+  button.textContent = "Showroomkaart maken...";
+
+  try {
+    const response = await fetch("/api/showroomkaart", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        vehicleId: payload.vehicleId,
+        licensePlate: normalizeLicensePlate(payload.licensePlate)
+      })
+    });
+
+    if (!response.ok) {
+      const result = await response.json().catch(() => ({}));
+      throw new Error(result.message || "Showroomkaart maken mislukt");
+    }
+
+    const blob = await response.blob();
+    const fileName = getDownloadFileName(response.headers.get("content-disposition")) || "showroomkaart.docx";
+    const link = document.createElement("a");
+    const objectUrl = URL.createObjectURL(blob);
+    link.href = objectUrl;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(objectUrl);
+  } catch (error) {
+    window.alert(error.message || "Showroomkaart maken mislukt");
+  } finally {
+    button.disabled = false;
+    button.textContent = originalText;
+  }
+}
+
+function getDownloadFileName(header) {
+  const match = String(header || "").match(/filename="([^"]+)"/i);
+  if (!match) return "";
+  return decodeURIComponent(match[1]);
 }
 
 function escapeHtml(value) {
