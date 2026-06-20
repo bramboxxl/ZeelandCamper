@@ -515,6 +515,7 @@ function parseSetCookie(header) {
 }
 
 async function mobiloxLogin(credentials = {}) {
+  credentials = credentials || {};
   const email = String(credentials.email || MOBILOX_EMAIL || "").trim();
   const password = String(credentials.password || MOBILOX_PASSWORD || "");
 
