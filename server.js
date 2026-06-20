@@ -927,10 +927,13 @@ function parseKeyValueLine(line) {
 }
 
 function headingLikeLine(text) {
-  const value = String(text || "").trim();
+  const value = stripListMarker(text);
   if (!value || value.includes(":")) return false;
-  if (value.length > 42) return false;
-  return /^(Comfort|Exterieur|Infotainment|Interieur|Overige|Belangrijkste kenmerken|Comfortabel interieur|Extra uitrusting|Onderhoud & veiligheid)$/i.test(value);
+  if (/^(Comfort|Exterieur|Infotainment|Interieur|Overige|Belangrijkste kenmerken|Comfortabel interieur|Extra uitrusting|Onderhoud & veiligheid)$/i.test(value)) {
+    return true;
+  }
+  if (value.length > 58) return false;
+  return /(\?|&|indeling|uitrusting|onderhoud|bijzonder)$/i.test(value);
 }
 
 function paragraphOptionsForShowroomLine(text, bodyFontSize, textLength) {
@@ -1029,7 +1032,7 @@ function showroomRemainingXml(lines, bodyFontSize, textLength, sections = []) {
 function flattenShowroomSections(sections) {
   return sections.flatMap((section) => [
     { text: section.heading, bullet: false },
-    ...section.items.map((item) => ({ text: item, bullet: !proseLikeLine(item) }))
+    ...section.items.map((item) => ({ text: item, bullet: listLikeLine(item) || !proseLikeLine(item) }))
   ]);
 }
 
@@ -1038,8 +1041,8 @@ function splitColumnAndProseItems(items) {
     const text = String(item?.text || item || "").trim();
     if (!text) return result;
 
-    if (!item.prose && (item.bullet || headingLikeLine(text))) {
-      result.columnItems.push({ text, bullet: Boolean(item.bullet) });
+    if (!item.prose && (item.bullet || listLikeLine(text) || headingLikeLine(text))) {
+      result.columnItems.push({ text, bullet: !headingLikeLine(text) });
     } else {
       result.proseItems.push(text);
     }
@@ -1047,9 +1050,14 @@ function splitColumnAndProseItems(items) {
   }, { columnItems: [], proseItems: [] });
 }
 
-function proseLikeLine(text) {
+function listLikeLine(text) {
   const value = String(text || "").trim();
-  return /^(Deze camper|Kortom)\b/i.test(value) || (value.length > 80 && /[.!?]$/.test(value));
+  return /^[\s•·\-–—*✓✔☑️✅🔎🔍🌈💪💎🚐👉📞🚙🚗📍]/u.test(value);
+}
+
+function proseLikeLine(text) {
+  const value = stripListMarker(text);
+  return /^(Deze camper|Kortom|Kom kijken|Bel vandaag|Uw nieuwe avontuur)\b/i.test(value) || (value.length > 100 && /[.!?]$/.test(value));
 }
 
 function pricePackageEndIndex(lines) {
@@ -1138,7 +1146,7 @@ function twoColumnTextXml(lines, options = {}) {
           const rawText = item.text || "";
           const isHeading = headingLikeLine(rawText);
           const useBullet = !isHeading;
-          const text = useBullet ? stripListMarker(rawText) : rawText;
+          const text = stripListMarker(rawText);
           const paragraphOptions = paragraphOptionsForShowroomLine(text, options.size || 17, options.textLength || 0);
           return paragraphXml(text, {
             ...paragraphOptions,
