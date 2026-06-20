@@ -949,7 +949,11 @@ function showroomRemainingXml(lines, bodyFontSize, textLength, sections = []) {
   const priceLines = lines.slice(priceIndex);
   const priceBlockEnd = pricePackageEndIndex(priceLines);
   const priceBlock = priceLines.slice(0, priceBlockEnd);
-  const afterPrice = priceLines.slice(priceBlockEnd).concat(flattenShowroomSections(sections), beforePrice);
+  const afterPrice = [
+    ...priceLines.slice(priceBlockEnd).map((text) => ({ text, bullet: false })),
+    ...flattenShowroomSections(sections),
+    ...beforePrice.map((text) => ({ text, bullet: false }))
+  ];
 
   return pageBreakXml()
     + pricePackageBlockXml(priceBlock, { size: 24 })
@@ -963,7 +967,10 @@ function showroomRemainingXml(lines, bodyFontSize, textLength, sections = []) {
 }
 
 function flattenShowroomSections(sections) {
-  return sections.flatMap((section) => [section.heading, ...section.items]);
+  return sections.flatMap((section) => [
+    { text: section.heading, bullet: false },
+    ...section.items.map((item) => ({ text: item, bullet: true }))
+  ]);
 }
 
 function pricePackageEndIndex(lines) {
@@ -989,12 +996,17 @@ function paragraphXml(text, options = {}) {
   const size = options.size || 21;
   const spacing = `<w:spacing w:before="${options.before || 0}" w:after="${options.after ?? 60}" w:line="${options.line || 250}" w:lineRule="auto"/>`;
   const justification = options.align ? `<w:jc w:val="${options.align}"/>` : "";
+  const indent = options.bullet ? '<w:ind w:left="260" w:hanging="180"/>' : "";
   const bold = options.bold ? "<w:b/>" : "";
   const color = options.color ? `<w:color w:val="${options.color}"/>` : "";
+  const bulletRun = options.bullet && String(text || "").trim()
+    ? `<w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:sz w:val="${size}"/><w:szCs w:val="${size}"/></w:rPr><w:t xml:space="preserve">• </w:t></w:r>`
+    : "";
 
   return `
     <w:p>
-      <w:pPr>${spacing}${justification}</w:pPr>
+      <w:pPr>${spacing}${justification}${indent}</w:pPr>
+      ${bulletRun}
       <w:r>
         <w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/>${bold}${color}<w:sz w:val="${size}"/><w:szCs w:val="${size}"/></w:rPr>
         <w:t xml:space="preserve">${escapeXml(text)}</w:t>
@@ -1033,17 +1045,20 @@ function twoColumnTextXml(lines, options = {}) {
   const columns = 2;
   const tableWidth = options.width || 9000;
   const cellWidth = Math.floor(tableWidth / columns);
-  const splitIndex = Math.ceil(lines.length / columns);
-  const columnLines = [lines.slice(0, splitIndex), lines.slice(splitIndex)];
+  const normalizedLines = lines.map((line) => typeof line === "object" && line !== null ? line : { text: line, bullet: false });
+  const splitIndex = Math.ceil(normalizedLines.length / columns);
+  const columnLines = [normalizedLines.slice(0, splitIndex), normalizedLines.slice(splitIndex)];
 
   const rowXml = `
     <w:tr>
       ${columnLines.map((items) => `<w:tc>
         <w:tcPr><w:tcW w:w="${cellWidth}" w:type="dxa"/><w:tcMar><w:top w:w="0" w:type="dxa"/><w:left w:w="60" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="160" w:type="dxa"/></w:tcMar></w:tcPr>
-        ${items.map((text, index) => {
+        ${items.map((item, index) => {
+          const text = item.text || "";
           const paragraphOptions = paragraphOptionsForShowroomLine(text, options.size || 17, options.textLength || 0);
           return paragraphXml(text, {
             ...paragraphOptions,
+            bullet: Boolean(item.bullet),
             before: index === 0 ? 0 : Math.min(paragraphOptions.before || 0, 32),
             after: Math.min(paragraphOptions.after || 0, 18),
             line: Math.min(paragraphOptions.line || 190, 185)
@@ -1069,11 +1084,13 @@ function pricePackageBlockXml(lines, options = {}) {
           const isFirstLine = index === 0;
           const startsSecondPriceOption = /^Prijs inclusief zekerhedenpakket/i.test(value);
           const isPrice = /^(Als-is prijs|Prijs inclusief zekerhedenpakket)/i.test(value);
+          const isPackageBullet = /^(3 maanden technische garantie|een volledig jaar APK|was en poetsbeurt|door de fabrikant|de tenaamstelling|oplossen inspectiepunten|6 of 12 maanden garantie)/i.test(value);
           const before = isFirstLine || startsSecondPriceOption ? 0 : 10;
           const after = isPrice ? 18 : 8;
           const paragraph = paragraphXml(text, {
             size,
             bold: isPrice,
+            bullet: isPackageBullet,
             color: isPrice ? "060250" : "",
             before,
             after,
@@ -1119,7 +1136,7 @@ function sectionColumnsXml(sections, options = {}) {
           <w:tcPr><w:tcW w:w="${cellWidth}" w:type="dxa"/><w:tcMar><w:top w:w="40" w:type="dxa"/><w:left w:w="60" w:type="dxa"/><w:bottom w:w="40" w:type="dxa"/><w:right w:w="160" w:type="dxa"/></w:tcMar></w:tcPr>
           ${section ? [
             paragraphXml(section.heading, { size: (options.size || 18) + 2, bold: true, after: 18, line: 205 }),
-            ...section.items.map((item) => paragraphXml(item, { size: options.size || 18, after: 0, line: 200 }))
+            ...section.items.map((item) => paragraphXml(item, { size: options.size || 18, bullet: true, after: 0, line: 200 }))
           ].join("") : paragraphXml("", { size: options.size || 18, after: 0, line: 200 })}
         </w:tc>`;
       }).join("")}
