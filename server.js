@@ -417,6 +417,11 @@ async function syncInventoryFromMobilox() {
 
   for (const item of inventory) {
     const existing = findExistingMobiloxVehicle(vehicles, item);
+    const preview = await fetchMobiloxPreview({ id: `mobilox-${item.mobiloxId}`, mobiloxId: item.mobiloxId }).catch((error) => {
+      console.error(`Mobilox voorbeeld ophalen mislukt voor ${item.mobiloxId}:`, error.message);
+      return null;
+    });
+    const previewLicensePlate = preview?.text ? extractLicensePlateFromPreview(preview.text) : "";
     const id = existing?.id || `mobilox-${item.mobiloxId}`;
     const nextVehicle = {
       ...(existing || {}),
@@ -426,7 +431,8 @@ async function syncInventoryFromMobilox() {
       mileage: item.mileage || existing?.mileage || "",
       price: item.price || existing?.price || "",
       status: "staat te koop",
-      imageUrl: item.imageUrl || existing?.imageUrl || "",
+      imageUrl: preview?.imageUrl || item.imageUrl || existing?.imageUrl || "",
+      licensePlate: normalizeLicensePlateKey(previewLicensePlate || existing?.licensePlate || ""),
       source: "Mobilox",
       additionalInfo: existing?.additionalInfo || [
         item.fuel ? `Brandstof: ${item.fuel}` : "",

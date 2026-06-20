@@ -523,6 +523,15 @@ h3 {
   gap: 8px;
 }
 
+.overview-card-image {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  border-radius: 6px;
+  background: var(--surface);
+}
+
 .overview-card:hover {
   background: var(--surface);
 }

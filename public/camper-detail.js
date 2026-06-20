@@ -51,7 +51,7 @@
 
   previousLink.href = `/camper-detail.html?id=${encodeURIComponent(previousVehicle.id)}`;
   nextLink.href = `/camper-detail.html?id=${encodeURIComponent(nextVehicle.id)}`;
-  showroomkaartLink.href = showroomkaartHref(vehicle);
+  showroomkaartLink.href = "#";
   photosLink.href = `/photos.html?id=${encodeURIComponent(vehicle.id)}`;
   positionLabel.textContent = `${selectedIndex + 1} / ${vehicles.length}`;
   pageTitle.textContent = vehicle.sourceId || vehicle.id;
@@ -70,6 +70,14 @@
 
   renderTodos();
   renderRdwFinnikData();
+
+  showroomkaartLink.addEventListener("click", async (event) => {
+    event.preventDefault();
+    await downloadShowroomCard({
+      vehicleId: vehicle.id || "",
+      licensePlate: vehicle.licensePlate || ""
+    }, showroomkaartLink);
+  });
 
   rdwLookupButton.addEventListener("click", async () => {
     const licensePlate = form.elements.licensePlate.value.trim();
@@ -301,12 +309,52 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
-function showroomkaartHref(vehicle) {
-  const licensePlate = normalizeLicensePlate(vehicle?.licensePlate);
-  if (!licensePlate) return `/showroomkaart.html?id=${encodeURIComponent(vehicle?.id || "")}`;
-  return `/showroomkaart.html?kenteken=${encodeURIComponent(licensePlate)}`;
-}
-
 function normalizeLicensePlate(value) {
   return String(value || "").replace(/[^a-z0-9]/gi, "").toUpperCase();
+}
+
+async function downloadShowroomCard(payload, button) {
+  const originalText = button.textContent;
+  button.setAttribute("aria-disabled", "true");
+  button.textContent = "Showroomkaart maken...";
+
+  try {
+    const response = await fetch("/api/showroomkaart", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        vehicleId: payload.vehicleId,
+        licensePlate: normalizeLicensePlate(payload.licensePlate)
+      })
+    });
+
+    if (!response.ok) {
+      const result = await response.json().catch(() => ({}));
+      throw new Error(result.message || "Showroomkaart maken mislukt");
+    }
+
+    const blob = await response.blob();
+    const fileName = getDownloadFileName(response.headers.get("content-disposition")) || "showroomkaart.docx";
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(objectUrl);
+  } catch (error) {
+    window.alert(error.message || "Showroomkaart maken mislukt");
+  } finally {
+    button.removeAttribute("aria-disabled");
+    button.textContent = originalText;
+  }
+}
+
+function getDownloadFileName(header) {
+  const match = String(header || "").match(/filename="([^"]+)"/i);
+  if (!match) return "";
+  return decodeURIComponent(match[1]);
 }
