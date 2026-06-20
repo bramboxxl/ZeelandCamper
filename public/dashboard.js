@@ -17,11 +17,10 @@
   const firstDetailLink = document.querySelector("#first-detail-link");
   const firstShowroomkaartLink = document.querySelector("#first-showroomkaart-link");
 
-  await fetch("/api/sync/inventory", { method: "POST" }).catch(() => {});
-
   const vehiclesResponse = await fetch("/api/vehicles");
   const data = await vehiclesResponse.json();
   let vehicles = data.vehicles || [];
+  refreshInventoryInBackground();
 
   count.textContent = vehicles.length;
 
@@ -99,6 +98,28 @@
         </label>
       </article>
     `).join("");
+  }
+
+  async function refreshInventoryInBackground() {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
+
+    try {
+      const syncResponse = await fetch("/api/sync/inventory", {
+        method: "POST",
+        signal: controller.signal
+      });
+      clearTimeout(timeout);
+      if (!syncResponse.ok) return;
+
+      const refreshedResponse = await fetch("/api/vehicles");
+      const refreshedData = await refreshedResponse.json();
+      vehicles = refreshedData.vehicles || vehicles;
+      count.textContent = vehicles.length;
+      renderVehicles();
+    } catch (error) {
+      clearTimeout(timeout);
+    }
   }
 
   list.addEventListener("click", async (event) => {

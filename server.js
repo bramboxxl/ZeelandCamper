@@ -391,6 +391,7 @@ function parseMobiloxInventory(html) {
 
 async function fetchMobiloxInventory() {
   const response = await fetch(MOBILOX_INVENTORY_URL, {
+    signal: AbortSignal.timeout(10000),
     headers: {
       "User-Agent": "ZeelandCamper voorraad sync"
     }
@@ -417,11 +418,6 @@ async function syncInventoryFromMobilox() {
 
   for (const item of inventory) {
     const existing = findExistingMobiloxVehicle(vehicles, item);
-    const preview = await fetchMobiloxPreview({ id: `mobilox-${item.mobiloxId}`, mobiloxId: item.mobiloxId }).catch((error) => {
-      console.error(`Mobilox voorbeeld ophalen mislukt voor ${item.mobiloxId}:`, error.message);
-      return null;
-    });
-    const previewLicensePlate = preview?.text ? extractLicensePlateFromPreview(preview.text) : "";
     const id = existing?.id || `mobilox-${item.mobiloxId}`;
     const nextVehicle = {
       ...(existing || {}),
@@ -431,8 +427,8 @@ async function syncInventoryFromMobilox() {
       mileage: item.mileage || existing?.mileage || "",
       price: item.price || existing?.price || "",
       status: "staat te koop",
-      imageUrl: preview?.imageUrl || item.imageUrl || existing?.imageUrl || "",
-      licensePlate: normalizeLicensePlateKey(previewLicensePlate || existing?.licensePlate || ""),
+      imageUrl: item.imageUrl || existing?.imageUrl || "",
+      licensePlate: normalizeLicensePlateKey(existing?.licensePlate || ""),
       source: "Mobilox",
       additionalInfo: existing?.additionalInfo || [
         item.fuel ? `Brandstof: ${item.fuel}` : "",
@@ -1560,12 +1556,11 @@ const server = http.createServer(async (request, response) => {
         expires: Date.now() + SESSION_MAX_AGE
       });
 
-      const inventorySync = await syncInventoryFromMobilox().catch((error) => {
-        console.error("Mobilox voorraad sync mislukt:", error.message);
-        return { ok: false, message: error.message };
+      syncInventoryFromMobilox().catch((error) => {
+        console.error("Mobilox voorraad sync na login mislukt:", error.message);
       });
 
-      sendJson(response, 200, { ok: true, inventorySync }, {
+      sendJson(response, 200, { ok: true }, {
         "Set-Cookie": `zc_session=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${SESSION_MAX_AGE / 1000}`
       });
     } catch (error) {
