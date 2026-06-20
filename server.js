@@ -846,6 +846,9 @@ function buildShowroomDocx({ vehicle, detail, image }) {
     showroomContent.proseItems.length ? blankParagraphXml({ size: 20, line: 180 }) : "",
     layout.specs.length ? keyValueColumnsXml(layout.specs, { columns: textLength > 3800 ? 3 : 2, size: bodyFontSize, before: imageXml ? 45 : 0 }) : "",
     twoColumnTextXml(showroomContent.optionItems, { size: 20, textLength }),
+    showroomContent.optionItems.length && showroomContent.detailItems.length ? blankParagraphXml({ size: 20, line: 180 }) : "",
+    showroomContent.optionItems.length && showroomContent.detailItems.length ? horizontalRuleXml() : "",
+    showroomContent.optionItems.length && showroomContent.detailItems.length ? blankParagraphXml({ size: 20, line: 180 }) : "",
     twoColumnTextXml(showroomContent.detailItems, { size: 20, textLength }),
     sectPr
   ].join("");
