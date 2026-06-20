@@ -747,7 +747,7 @@ async function createShowroomCardDocx(input) {
     throw error;
   }
 
-  const preview = await fetchMobiloxPreview(vehicle, input?.mobiloxCredentials);
+  const preview = await fetchMobiloxPreview(vehicle);
   if (!preview.text) {
     const error = new Error("Geen tekst gevonden in het Mobilox Voorbeeld-scherm");
     error.status = 422;
@@ -1595,13 +1595,14 @@ const server = http.createServer(async (request, response) => {
   }
 
   if (request.method === "POST" && url.pathname === "/api/showroomkaart") {
+    if (!requireSession(request, response)) return;
+
     try {
       const body = await readBody(request);
       const payload = JSON.parse(body || "{}");
       const result = await createShowroomCardDocx({
         licensePlate: payload.licensePlate,
-        vehicleId: payload.vehicleId,
-        mobiloxCredentials: payload.mobiloxCredentials
+        vehicleId: payload.vehicleId
       });
 
       response.writeHead(200, {
@@ -1790,7 +1791,7 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
-  const protectedPages = ["/dashboard", "/dashboard.html", "/camper-detail", "/camper-detail.html", "/todos", "/todos.html", "/new-camper", "/new-camper.html", "/op-het-oog", "/op-het-oog.html", "/photos", "/photos.html"];
+  const protectedPages = ["/dashboard", "/dashboard.html", "/camper-detail", "/camper-detail.html", "/todos", "/todos.html", "/new-camper", "/new-camper.html", "/op-het-oog", "/op-het-oog.html", "/photos", "/photos.html", "/showroomkaart", "/showroomkaart.html"];
   if (protectedPages.includes(url.pathname) && !getSession(request)) {
     response.writeHead(302, { Location: "/login.html" });
     response.end();

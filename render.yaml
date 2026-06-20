@@ -16,3 +16,7 @@ services:
         value: "1234"
       - key: SESSION_SECRET
         generateValue: true
+      - key: MOBILOX_EMAIL
+        sync: false
+      - key: MOBILOX_PASSWORD
+        sync: false
