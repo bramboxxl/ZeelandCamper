@@ -805,9 +805,10 @@ function buildShowroomDocx({ vehicle, detail, image }) {
   const relId = nextRelationshipId(template.get(relsPath)?.data?.toString("utf8") || "");
   const imageExt = imageExtension(image?.contentType);
   const imageName = `showroom-photo${imageExt}`;
-  const textLength = detail.description.length;
+  const cleanedDescription = removeShowroomContactText(detail.description);
+  const textLength = cleanedDescription.length;
   const bodyFontSize = textLength > 5200 ? 16 : textLength > 3800 ? 17 : 19;
-  const paragraphs = splitDescription(detail.description);
+  const layout = showroomLayout(detail.title, cleanedDescription);
 
   if (image?.buffer?.length) {
     template.set(`word/media/${imageName}`, {
@@ -824,17 +825,20 @@ function buildShowroomDocx({ vehicle, detail, image }) {
     });
   }
 
-  const sectPr = extractSectPr(template.get(documentPath)?.data?.toString("utf8") || "") || defaultSectPr();
-  const imageXml = image?.buffer?.length ? imageDrawingXml(relId, 5486400, 2468880) : "";
+  const sectPr = adjustSectPrMargins(extractSectPr(template.get(documentPath)?.data?.toString("utf8") || "") || defaultSectPr());
+  const imageSize = image?.buffer?.length ? fitImageSize(image.buffer, 5486400, 2200000) : null;
+  const imageXml = imageSize ? imageDrawingXml(relId, imageSize.cx, imageSize.cy) : "";
 
   const bodyXml = [
-    paragraphXml(detail.title, { size: 34, bold: true, color: "060250", after: 90 }),
+    paragraphXml(detail.title, { size: 30, bold: true, color: "060250", after: 80 }),
     imageXml,
-    ...paragraphs.map((text, index) => paragraphXml(text, {
-      size: headingLikeLine(text) ? bodyFontSize + 2 : bodyFontSize,
-      bold: index === 0 || headingLikeLine(text),
-      before: index === 0 ? (imageXml ? 80 : 0) : headingLikeLine(text) ? 90 : 18,
-      after: headingLikeLine(text) ? 20 : 18,
+    layout.specs.length ? keyValueColumnsXml(layout.specs, { columns: 2, size: bodyFontSize, before: imageXml ? 70 : 0 }) : "",
+    layout.sections.length ? sectionColumnsXml(layout.sections, { columns: layout.sections.length >= 6 ? 3 : 2, size: bodyFontSize }) : "",
+    ...layout.remaining.map((text) => paragraphXml(text, {
+      size: bodyFontSize,
+      bold: headingLikeLine(text),
+      before: headingLikeLine(text) ? 70 : 18,
+      after: 18,
       line: textLength > 5200 ? 190 : 210
     })),
     sectPr
@@ -848,19 +852,68 @@ function buildShowroomDocx({ vehicle, detail, image }) {
   return writeZipEntries(template);
 }
 
-function splitDescription(text) {
-  return String(text || "")
+function removeShowroomContactText(text) {
+  const lines = String(text || "")
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const cutIndex = lines.findIndex((line) => /^(Bezichtiging & contact|Openingstijden)$/i.test(line) || /^We hebben ons uiterste best gedaan/i.test(line));
+  return (cutIndex >= 0 ? lines.slice(0, cutIndex) : lines).join("\n");
+}
+
+function showroomLayout(title, text) {
+  const lines = String(text || "")
     .split(/\n+/)
     .map((line) => line.trim())
     .filter(Boolean)
+    .filter((line, index) => !(index === 0 && normalizeSyncKey(line) === normalizeSyncKey(title)))
     .slice(0, 220);
+  const specs = [];
+  const sections = [];
+  const remaining = [];
+  let index = 0;
+
+  while (index < lines.length && !headingLikeLine(lines[index])) {
+    const parsed = parseKeyValueLine(lines[index]);
+    if (parsed) specs.push(parsed);
+    else remaining.push(lines[index]);
+    index += 1;
+  }
+
+  while (index < lines.length) {
+    const heading = lines[index];
+    if (!headingLikeLine(heading)) {
+      remaining.push(heading);
+      index += 1;
+      continue;
+    }
+
+    const items = [];
+    index += 1;
+    while (index < lines.length && !headingLikeLine(lines[index])) {
+      if (parseKeyValueLine(lines[index])) break;
+      items.push(lines[index]);
+      index += 1;
+    }
+
+    if (items.length) sections.push({ heading, items });
+    else remaining.push(heading);
+  }
+
+  return { specs, sections, remaining };
+}
+
+function parseKeyValueLine(line) {
+  const match = String(line || "").match(/^([^:]{2,36}):\s*(.+)$/);
+  if (!match) return null;
+  return [match[1].trim(), match[2].trim()];
 }
 
 function headingLikeLine(text) {
   const value = String(text || "").trim();
   if (!value || value.includes(":")) return false;
   if (value.length > 42) return false;
-  return /^(Comfort|Exterieur|Infotainment|Interieur|Overige|Belangrijkste kenmerken|Comfortabel interieur|Extra uitrusting|Onderhoud & veiligheid|Bezichtiging & contact|Openingstijden)$/i.test(value);
+  return /^(Comfort|Exterieur|Infotainment|Interieur|Overige|Belangrijkste kenmerken|Comfortabel interieur|Extra uitrusting|Onderhoud & veiligheid)$/i.test(value);
 }
 
 function escapeXml(value) {
@@ -885,6 +938,68 @@ function paragraphXml(text, options = {}) {
         <w:t xml:space="preserve">${escapeXml(text)}</w:t>
       </w:r>
     </w:p>`;
+}
+
+function keyValueColumnsXml(pairs, options = {}) {
+  const columns = options.columns || 2;
+  const cellWidth = Math.floor(9360 / columns);
+  const rows = chunkArray(pairs, columns).map((row) => `
+    <w:tr>
+      ${Array.from({ length: columns }).map((_, index) => {
+        const pair = row[index];
+        return `<w:tc>
+          <w:tcPr><w:tcW w:w="${cellWidth}" w:type="dxa"/><w:tcMar><w:top w:w="20" w:type="dxa"/><w:left w:w="60" w:type="dxa"/><w:bottom w:w="20" w:type="dxa"/><w:right w:w="120" w:type="dxa"/></w:tcMar></w:tcPr>
+          ${pair ? paragraphXml(`${pair[0]}: ${pair[1]}`, { size: options.size || 18, after: 0, line: 205 }) : paragraphXml("", { size: options.size || 18, after: 0, line: 205 })}
+        </w:tc>`;
+      }).join("")}
+    </w:tr>`).join("");
+
+  return tableXml(rows, columns, cellWidth, { before: options.before || 0, after: 80 });
+}
+
+function sectionColumnsXml(sections, options = {}) {
+  const columns = options.columns || 3;
+  const cellWidth = Math.floor(9360 / columns);
+  const rows = chunkArray(sections, columns).map((row) => `
+    <w:tr>
+      ${Array.from({ length: columns }).map((_, index) => {
+        const section = row[index];
+        return `<w:tc>
+          <w:tcPr><w:tcW w:w="${cellWidth}" w:type="dxa"/><w:tcMar><w:top w:w="40" w:type="dxa"/><w:left w:w="60" w:type="dxa"/><w:bottom w:w="40" w:type="dxa"/><w:right w:w="160" w:type="dxa"/></w:tcMar></w:tcPr>
+          ${section ? [
+            paragraphXml(section.heading, { size: (options.size || 18) + 2, bold: true, after: 20, line: 205 }),
+            ...section.items.map((item) => paragraphXml(item, { size: options.size || 18, after: 0, line: 205 }))
+          ].join("") : paragraphXml("", { size: options.size || 18, after: 0, line: 205 })}
+        </w:tc>`;
+      }).join("")}
+    </w:tr>`).join("");
+
+  return tableXml(rows, columns, cellWidth, { before: 30, after: 80 });
+}
+
+function tableXml(rowsXml, columns, cellWidth, options = {}) {
+  return `
+    <w:tbl>
+      <w:tblPr>
+        <w:tblW w:w="9360" w:type="dxa"/>
+        <w:tblInd w:w="0" w:type="dxa"/>
+        <w:tblBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tblBorders>
+        <w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar>
+        <w:tblpPr/>
+      </w:tblPr>
+      <w:tblGrid>${Array.from({ length: columns }).map(() => `<w:gridCol w:w="${cellWidth}"/>`).join("")}</w:tblGrid>
+      <w:tr><w:tc><w:tcPr><w:gridSpan w:val="${columns}"/><w:tcW w:w="9360" w:type="dxa"/></w:tcPr>${paragraphXml("", { before: options.before || 0, after: 0, line: 1 })}</w:tc></w:tr>
+      ${rowsXml}
+      <w:tr><w:tc><w:tcPr><w:gridSpan w:val="${columns}"/><w:tcW w:w="9360" w:type="dxa"/></w:tcPr>${paragraphXml("", { before: 0, after: options.after || 0, line: 1 })}</w:tc></w:tr>
+    </w:tbl>`;
+}
+
+function chunkArray(items, size) {
+  const chunks = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
 }
 
 function documentXml(bodyXml) {
@@ -918,12 +1033,65 @@ function imageDrawingXml(relId, cx, cy) {
     </w:p>`;
 }
 
+function fitImageSize(buffer, maxCx, maxCy) {
+  const dimensions = imageDimensions(buffer);
+  if (!dimensions) return { cx: maxCx, cy: Math.min(maxCy, Math.round(maxCx * 0.55)) };
+
+  const ratio = dimensions.width / dimensions.height;
+  let cx = maxCx;
+  let cy = Math.round(cx / ratio);
+  if (cy > maxCy) {
+    cy = maxCy;
+    cx = Math.round(cy * ratio);
+  }
+  return { cx, cy };
+}
+
+function imageDimensions(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 24) return null;
+
+  if (buffer.readUInt32BE(0) === 0x89504e47 && buffer.toString("ascii", 12, 16) === "IHDR") {
+    return {
+      width: buffer.readUInt32BE(16),
+      height: buffer.readUInt32BE(20)
+    };
+  }
+
+  if (buffer[0] === 0xff && buffer[1] === 0xd8) {
+    let offset = 2;
+    while (offset < buffer.length - 9) {
+      if (buffer[offset] !== 0xff) {
+        offset += 1;
+        continue;
+      }
+      const marker = buffer[offset + 1];
+      const length = buffer.readUInt16BE(offset + 2);
+      if (length < 2) return null;
+      if ((marker >= 0xc0 && marker <= 0xc3) || (marker >= 0xc5 && marker <= 0xc7) || (marker >= 0xc9 && marker <= 0xcb) || (marker >= 0xcd && marker <= 0xcf)) {
+        return {
+          height: buffer.readUInt16BE(offset + 5),
+          width: buffer.readUInt16BE(offset + 7)
+        };
+      }
+      offset += 2 + length;
+    }
+  }
+
+  return null;
+}
+
 function extractSectPr(documentXmlText) {
   return documentXmlText.match(/<w:sectPr[\s\S]*<\/w:sectPr>/)?.[0] || "";
 }
 
+function adjustSectPrMargins(sectPr) {
+  const margin = '<w:pgMar w:top="2300" w:right="900" w:bottom="1300" w:left="900" w:header="450" w:footer="450" w:gutter="0"/>';
+  if (/<w:pgMar\b[^>]*\/>/.test(sectPr)) return sectPr.replace(/<w:pgMar\b[^>]*\/>/, margin);
+  return sectPr.replace("</w:sectPr>", `${margin}</w:sectPr>`);
+}
+
 function defaultSectPr() {
-  return `<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="900" w:right="900" w:bottom="900" w:left="900" w:header="450" w:footer="450" w:gutter="0"/></w:sectPr>`;
+  return `<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="2300" w:right="900" w:bottom="1300" w:left="900" w:header="450" w:footer="450" w:gutter="0"/></w:sectPr>`;
 }
 
 function defaultDocumentRels() {
