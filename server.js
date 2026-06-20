@@ -834,6 +834,7 @@ function buildShowroomDocx({ vehicle, detail, image }) {
   const bodyXml = [
     paragraphXml(detail.title, { size: 30, bold: true, color: "060250", after: 70, line: 300, align: "center" }),
     imageXml,
+    imageXml ? blankParagraphXml({ size: 20, line: 180 }) : "",
     layout.specs.length ? keyValueColumnsXml(layout.specs, { columns: textLength > 3800 ? 3 : 2, size: bodyFontSize, before: imageXml ? 45 : 0 }) : "",
     showroomRemainingXml(layout.remaining, bodyFontSize, textLength, layout.sections),
     sectPr
@@ -954,23 +955,44 @@ function showroomRemainingXml(lines, bodyFontSize, textLength, sections = []) {
     ...flattenShowroomSections(sections),
     ...beforePrice.map((text) => ({ text, bullet: false }))
   ];
+  const { columnItems, proseItems } = splitColumnAndProseItems(afterPrice);
 
   return pageBreakXml()
     + pricePackageBlockXml(priceBlock, { size: 24 })
     + blankParagraphXml({ size: 20, line: 180 })
     + horizontalRuleXml()
     + blankParagraphXml({ size: 20, line: 180 })
-    + twoColumnTextXml(afterPrice, {
+    + twoColumnTextXml(columnItems, {
     size: 20,
     textLength
-  });
+  })
+    + fullWidthProseBlockXml(proseItems, { size: 20 });
 }
 
 function flattenShowroomSections(sections) {
   return sections.flatMap((section) => [
     { text: section.heading, bullet: false },
-    ...section.items.map((item) => ({ text: item, bullet: true }))
+    ...section.items.map((item) => ({ text: item, bullet: !proseLikeLine(item) }))
   ]);
+}
+
+function splitColumnAndProseItems(items) {
+  return items.reduce((result, item) => {
+    const text = String(item?.text || item || "").trim();
+    if (!text) return result;
+
+    if (item.bullet || headingLikeLine(text)) {
+      result.columnItems.push({ text, bullet: Boolean(item.bullet) });
+    } else {
+      result.proseItems.push(text);
+    }
+    return result;
+  }, { columnItems: [], proseItems: [] });
+}
+
+function proseLikeLine(text) {
+  const value = String(text || "").trim();
+  return /^Kortom\b/i.test(value) || value.length > 120;
 }
 
 function pricePackageEndIndex(lines) {
@@ -1042,6 +1064,8 @@ function horizontalRuleXml() {
 }
 
 function twoColumnTextXml(lines, options = {}) {
+  if (!lines.length) return "";
+
   const columns = 2;
   const tableWidth = options.width || 9000;
   const cellWidth = Math.floor(tableWidth / columns);
@@ -1068,6 +1092,30 @@ function twoColumnTextXml(lines, options = {}) {
     </w:tr>`;
 
   return tableXml(rowXml, columns, cellWidth, { width: tableWidth, before: 0, after: 0 });
+}
+
+function fullWidthProseBlockXml(lines, options = {}) {
+  if (!lines.length) return "";
+
+  const tableWidth = options.width || 9000;
+  const size = options.size || 20;
+  const rowXml = `
+    <w:tr>
+      <w:tc>
+        <w:tcPr><w:tcW w:w="${tableWidth}" w:type="dxa"/><w:tcMar><w:top w:w="0" w:type="dxa"/><w:left w:w="80" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="120" w:type="dxa"/></w:tcMar></w:tcPr>
+        ${lines.map((text, index) => paragraphXml(text, {
+          size,
+          before: index === 0 ? 0 : 16,
+          after: 8,
+          line: 210
+        })).join("")}
+      </w:tc>
+    </w:tr>`;
+
+  return blankParagraphXml({ size, line: 180 })
+    + horizontalRuleXml()
+    + blankParagraphXml({ size, line: 180 })
+    + tableXml(rowXml, 1, tableWidth, { width: tableWidth, before: 0, after: 0 });
 }
 
 function pricePackageBlockXml(lines, options = {}) {
