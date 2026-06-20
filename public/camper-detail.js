@@ -303,7 +303,7 @@ function escapeHtml(value) {
 
 function showroomkaartHref(vehicle) {
   const licensePlate = normalizeLicensePlate(vehicle?.licensePlate);
-  if (!licensePlate) return "/showroomkaart.html";
+  if (!licensePlate) return `/showroomkaart.html?id=${encodeURIComponent(vehicle?.id || "")}`;
   return `/showroomkaart.html?kenteken=${encodeURIComponent(licensePlate)}`;
 }
 

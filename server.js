@@ -413,7 +413,7 @@ async function syncInventoryFromMobilox() {
   const activeMobiloxIds = new Set(inventory.map((item) => item.mobiloxId));
   let created = 0;
   let updated = 0;
-  let sold = 0;
+  let removed = 0;
 
   for (const item of inventory) {
     const existing = findExistingMobiloxVehicle(vehicles, item);
@@ -446,13 +446,12 @@ async function syncInventoryFromMobilox() {
   }
 
   for (const vehicle of vehicles) {
-    if (vehicle.mobiloxSynced && vehicle.mobiloxId && !activeMobiloxIds.has(vehicle.mobiloxId) && vehicle.status === "staat te koop") {
-      await upsertVehicle(vehicle.id, {
-        ...vehicle,
-        status: "verkocht",
-        lastInventorySyncAt: now
-      });
-      sold += 1;
+    const isCurrentMobiloxVehicle = vehicle.mobiloxId && activeMobiloxIds.has(String(vehicle.mobiloxId));
+    const keepWatchVehicle = vehicle.status === "Op het oog" || vehicle.status === "intake en contract";
+
+    if (!isCurrentMobiloxVehicle && !keepWatchVehicle) {
+      await deleteVehicle(vehicle.id);
+      removed += 1;
     }
   }
 
@@ -462,7 +461,7 @@ async function syncInventoryFromMobilox() {
     found: inventory.length,
     created,
     updated,
-    sold,
+    removed,
     syncedAt: now
   };
 }

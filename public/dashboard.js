@@ -17,6 +17,8 @@
   const firstDetailLink = document.querySelector("#first-detail-link");
   const firstShowroomkaartLink = document.querySelector("#first-showroomkaart-link");
 
+  await fetch("/api/sync/inventory", { method: "POST" }).catch(() => {});
+
   const vehiclesResponse = await fetch("/api/vehicles");
   const data = await vehiclesResponse.json();
   let vehicles = data.vehicles || [];
@@ -91,7 +93,7 @@
 
 function showroomkaartHref(vehicle) {
   const licensePlate = normalizeLicensePlate(vehicle?.licensePlate);
-  if (!licensePlate) return "/showroomkaart.html";
+  if (!licensePlate) return `/showroomkaart.html?id=${encodeURIComponent(vehicle?.id || "")}`;
   return `/showroomkaart.html?kenteken=${encodeURIComponent(licensePlate)}`;
 }
 
