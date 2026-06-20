@@ -808,7 +808,7 @@ function buildShowroomDocx({ vehicle, detail, image }) {
   const imageName = `showroom-photo${imageExt}`;
   const cleanedDescription = removeShowroomContactText(detail.description);
   const textLength = cleanedDescription.length;
-  const bodyFontSize = textLength > 5200 ? 18 : textLength > 3800 ? 19 : 20;
+  const bodyFontSize = textLength > 5200 ? 16 : textLength > 3800 ? 18 : 20;
   const layout = showroomLayout(detail.title, cleanedDescription);
 
   if (image?.buffer?.length) {
@@ -828,15 +828,14 @@ function buildShowroomDocx({ vehicle, detail, image }) {
 
   const originalDocumentXml = ensureDrawingNamespaces(template.get(documentPath)?.data?.toString("utf8") || documentXml(defaultSectPr()));
   const sectPr = showroomSectPr(extractSectPr(originalDocumentXml) || defaultSectPr());
-  const imageSize = image?.buffer?.length ? fitImageSize(image.buffer, 4550000, 1700000) : null;
+  const imageSize = image?.buffer?.length ? fitImageSize(image.buffer, 5486400, 2000000) : null;
   const imageXml = imageSize ? imageDrawingXml(relId, imageSize.cx, imageSize.cy) : "";
 
   const bodyXml = [
     paragraphXml(detail.title, { size: 30, bold: true, color: "060250", after: 70, line: 300 }),
     imageXml,
-    layout.specs.length ? keyValueColumnsXml(layout.specs, { columns: 2, size: bodyFontSize, before: imageXml ? 45 : 0 }) : "",
-    layout.sections.length ? sectionColumnsXml(layout.sections, { columns: layout.sections.length >= 6 ? 3 : 2, size: bodyFontSize }) : "",
-    ...layout.remaining.map((text) => paragraphXml(text, paragraphOptionsForShowroomLine(text, bodyFontSize, textLength))),
+    layout.specs.length ? keyValueColumnsXml(layout.specs, { columns: textLength > 3800 ? 3 : 2, size: bodyFontSize, before: imageXml ? 45 : 0 }) : "",
+    showroomRemainingXml(layout.remaining, bodyFontSize, textLength, layout.sections),
     sectPr
   ].join("");
 
@@ -929,6 +928,28 @@ function paragraphOptionsForShowroomLine(text, bodyFontSize, textLength) {
   };
 }
 
+function showroomRemainingXml(lines, bodyFontSize, textLength, sections = []) {
+  const priceIndex = lines.findIndex((text) => /^(Als-is prijs)/i.test(String(text || "").trim()));
+  if (priceIndex < 0) {
+    return [
+      sectionColumnsXml(sections, { columns: 3, size: bodyFontSize }),
+      lines.map((text) => paragraphXml(text, paragraphOptionsForShowroomLine(text, bodyFontSize, textLength))).join("")
+    ].join("");
+  }
+
+  const beforePrice = lines.slice(0, priceIndex);
+  const priceAndAfter = lines.slice(priceIndex).concat(flattenShowroomSections(sections), beforePrice);
+
+  return pageBreakXml() + twoColumnTextXml(priceAndAfter, {
+    size: Math.max(16, bodyFontSize - 1),
+    textLength
+  });
+}
+
+function flattenShowroomSections(sections) {
+  return sections.flatMap((section) => [section.heading, ...section.items]);
+}
+
 function escapeXml(value) {
   return String(value || "")
     .replaceAll("&", "&amp;")
@@ -952,6 +973,40 @@ function paragraphXml(text, options = {}) {
         <w:t xml:space="preserve">${escapeXml(text)}</w:t>
       </w:r>
     </w:p>`;
+}
+
+function pageBreakXml() {
+  return `
+    <w:p>
+      <w:pPr><w:spacing w:before="0" w:after="0" w:line="1" w:lineRule="auto"/></w:pPr>
+      <w:r><w:br w:type="page"/></w:r>
+    </w:p>`;
+}
+
+function twoColumnTextXml(lines, options = {}) {
+  const columns = 2;
+  const tableWidth = options.width || 9000;
+  const cellWidth = Math.floor(tableWidth / columns);
+  const splitIndex = Math.ceil(lines.length / columns);
+  const columnLines = [lines.slice(0, splitIndex), lines.slice(splitIndex)];
+
+  const rowXml = `
+    <w:tr>
+      ${columnLines.map((items) => `<w:tc>
+        <w:tcPr><w:tcW w:w="${cellWidth}" w:type="dxa"/><w:tcMar><w:top w:w="0" w:type="dxa"/><w:left w:w="60" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="160" w:type="dxa"/></w:tcMar></w:tcPr>
+        ${items.map((text, index) => {
+          const paragraphOptions = paragraphOptionsForShowroomLine(text, options.size || 17, options.textLength || 0);
+          return paragraphXml(text, {
+            ...paragraphOptions,
+            before: index === 0 ? 0 : Math.min(paragraphOptions.before || 0, 32),
+            after: Math.min(paragraphOptions.after || 0, 18),
+            line: Math.min(paragraphOptions.line || 190, 185)
+          });
+        }).join("")}
+      </w:tc>`).join("")}
+    </w:tr>`;
+
+  return tableXml(rowXml, columns, cellWidth, { width: tableWidth, before: 0, after: 0 });
 }
 
 function keyValueColumnsXml(pairs, options = {}) {
