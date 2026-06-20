@@ -830,13 +830,23 @@ function buildShowroomDocx({ vehicle, detail, image }) {
   const sectPr = showroomSectPr(extractSectPr(originalDocumentXml) || defaultSectPr());
   const imageSize = image?.buffer?.length ? fixedImageWidth(image.buffer, 5040000) : null;
   const imageXml = imageSize ? imageDrawingXml(relId, imageSize.cx, imageSize.cy) : "";
+  const showroomContent = splitShowroomContent(layout.remaining, layout.sections);
 
   const bodyXml = [
     paragraphXml(detail.title, { size: 30, bold: true, color: "060250", after: 70, line: 300, align: "center" }),
     imageXml,
     imageXml ? blankParagraphXml({ size: 20, line: 180 }) : "",
+    pricePackageBlockXml(showroomContent.priceBlock, { size: 24 }),
+    showroomContent.priceBlock.length ? blankParagraphXml({ size: 20, line: 180 }) : "",
+    showroomContent.priceBlock.length ? horizontalRuleXml() : "",
+    showroomContent.priceBlock.length ? blankParagraphXml({ size: 20, line: 180 }) : "",
     layout.specs.length ? keyValueColumnsXml(layout.specs, { columns: textLength > 3800 ? 3 : 2, size: bodyFontSize, before: imageXml ? 45 : 0 }) : "",
-    showroomRemainingXml(layout.remaining, bodyFontSize, textLength, layout.sections),
+    showroomContent.hasSecondPageContent ? pageBreakXml() : "",
+    twoColumnTextXml(showroomContent.optionItems, { size: 20, textLength }),
+    showroomContent.optionItems.length ? horizontalRuleXml() : "",
+    showroomContent.optionItems.length ? blankParagraphXml({ size: 20, line: 180 }) : "",
+    twoColumnTextXml(showroomContent.detailItems, { size: 20, textLength }),
+    fullWidthProseBlockXml(showroomContent.proseItems, { size: 20 }),
     sectPr
   ].join("");
 
@@ -935,6 +945,48 @@ function paragraphOptionsForShowroomLine(text, bodyFontSize, textLength) {
     after: isHeading ? 18 : isPrice ? 30 : isPackageIntro ? 30 : isPackageItem ? 6 : 12,
     line: textLength > 5200 ? 190 : 205
   };
+}
+
+function splitShowroomContent(lines, sections = []) {
+  const optionItems = flattenShowroomSections(sections.filter((section) => optionSectionHeading(section.heading)));
+  const otherSectionItems = flattenShowroomSections(sections.filter((section) => !optionSectionHeading(section.heading)));
+  const priceIndex = lines.findIndex((text) => /^(Als-is prijs)/i.test(String(text || "").trim()));
+  if (priceIndex < 0) {
+    const splitContent = splitColumnAndProseItems([
+      ...otherSectionItems,
+      ...lines.map((text) => ({ text, bullet: false }))
+    ]);
+    return {
+      priceBlock: [],
+      optionItems,
+      detailItems: splitContent.columnItems,
+      proseItems: splitContent.proseItems,
+      hasSecondPageContent: Boolean(optionItems.length || splitContent.columnItems.length || splitContent.proseItems.length)
+    };
+  }
+
+  const beforePrice = lines.slice(0, priceIndex);
+  const priceLines = lines.slice(priceIndex);
+  const priceBlockEnd = pricePackageEndIndex(priceLines);
+  const priceBlock = priceLines.slice(0, priceBlockEnd);
+  const afterPrice = [
+    ...priceLines.slice(priceBlockEnd).map((text) => ({ text, bullet: false })),
+    ...otherSectionItems,
+    ...beforePrice.map((text) => ({ text, bullet: false }))
+  ];
+  const splitContent = splitColumnAndProseItems(afterPrice);
+
+  return {
+    priceBlock,
+    optionItems,
+    detailItems: splitContent.columnItems,
+    proseItems: splitContent.proseItems,
+    hasSecondPageContent: Boolean(optionItems.length || splitContent.columnItems.length || splitContent.proseItems.length)
+  };
+}
+
+function optionSectionHeading(text) {
+  return /^(Comfort|Exterieur|Infotainment|Interieur|Overige)$/i.test(String(text || "").trim());
 }
 
 function showroomRemainingXml(lines, bodyFontSize, textLength, sections = []) {
