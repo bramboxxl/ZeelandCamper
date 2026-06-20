@@ -14,6 +14,7 @@ const VEHICLES_FILE = path.join(DATA_DIR, "vehicles.json");
 const SESSION_MAX_AGE = 1000 * 60 * 60 * 8;
 const VEHICLE_STATUSES = ["Op het oog", "intake en contract", "staat te koop", "verkocht", "gaat niet door"];
 const DATABASE_URL = process.env.DATABASE_URL;
+const MOBILOX_INVENTORY_URL = process.env.MOBILOX_INVENTORY_URL || "https://occasions.mobilox.nl/3293943-camper-zeeland";
 
 if (!DATABASE_URL) {
   throw new Error("DATABASE_URL is verplicht. Koppel een PostgreSQL database op Render.");
@@ -265,6 +266,163 @@ async function readVehiclePhoto(vehicleId, photoId) {
     [vehicleId, photoId]
   );
   return result.rows[0] || null;
+}
+
+function decodeHtml(value) {
+  return String(value || "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&euro;/g, "€")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function absoluteMobiloxUrl(value) {
+  const text = decodeHtml(value);
+  if (!text) return "";
+  if (/^https?:\/\//i.test(text)) return text;
+  return new URL(text, MOBILOX_INVENTORY_URL).toString();
+}
+
+function normalizeSyncKey(value) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function parseEuroPrice(value) {
+  const prices = [...String(value || "").matchAll(/(?:\u20ac|&euro;)\s*([0-9.\s]+),-/g)]
+    .map((match) => match[1].replace(/[^\d]/g, ""))
+    .filter(Boolean);
+  return prices.at(-1) || "";
+}
+
+function parseMobiloxCard(card) {
+  const href = card.match(/<a\s+href=("[^"]+"|'[^']+'|[^\s>]+)/i)?.[1]?.replace(/^["']|["']$/g, "") || "";
+  const mobiloxId = href.match(/\/(\d+)-[^/]+$/)?.[1] || "";
+  const title = decodeHtml(card.match(/<h3[^>]*class=["'][^"']*mox-title[^"']*["'][^>]*>([\s\S]*?)<\/h3>/i)?.[1] || "");
+  const imageUrl = absoluteMobiloxUrl(card.match(/<img[^>]+src=("[^"]+"|'[^']+'|[^\s>]+)/i)?.[1]?.replace(/^["']|["']$/g, "") || "");
+  const price = parseEuroPrice(card.match(/<div[^>]+class=["'][^"']*mox-price[^"']*["'][\s\S]*?<\/div>/i)?.[0] || card);
+  const specs = {};
+  const specRegex = /<span[^>]+class=["']?mox-spec-label["']?[^>]*>([\s\S]*?)<\/span>\s*<span[^>]+class=["']?mox-attribute-text["']?[^>]*>([\s\S]*?)<\/span>/gi;
+  let match;
+
+  while ((match = specRegex.exec(card))) {
+    const label = decodeHtml(match[1]);
+    const text = decodeHtml(match[2]);
+    if (/kilometer/i.test(text)) specs.mileage = label.replace(/[^\d]/g, "");
+    if (/brandstof/i.test(label)) specs.fuel = text;
+    if (/bouwjaar/i.test(label)) specs.year = text.replace(/[^\d]/g, "");
+    if (/transmissie/i.test(label)) specs.transmission = text;
+  }
+
+  if (!mobiloxId || !title) return null;
+
+  return {
+    mobiloxId,
+    title,
+    imageUrl,
+    price,
+    mileage: specs.mileage || "",
+    year: specs.year || "",
+    fuel: specs.fuel || "",
+    transmission: specs.transmission || "",
+    detailUrl: absoluteMobiloxUrl(href)
+  };
+}
+
+function parseMobiloxInventory(html) {
+  return String(html || "")
+    .split(/<div class=["']col-lg-4 col-md-6 col-sm-12 mox-product-column["']>/)
+    .slice(1)
+    .map(parseMobiloxCard)
+    .filter(Boolean);
+}
+
+async function fetchMobiloxInventory() {
+  const response = await fetch(MOBILOX_INVENTORY_URL, {
+    headers: {
+      "User-Agent": "ZeelandCamper voorraad sync"
+    }
+  });
+  if (!response.ok) throw new Error(`Mobilox voorraad kon niet worden opgehaald (${response.status})`);
+  return parseMobiloxInventory(await response.text());
+}
+
+function findExistingMobiloxVehicle(vehicles, item) {
+  const titleKey = normalizeSyncKey(item.title);
+
+  return vehicles.find((vehicle) => vehicle.mobiloxId === item.mobiloxId)
+    || vehicles.find((vehicle) => normalizeSyncKey(vehicle.title) === titleKey && String(vehicle.year || "") === String(item.year || ""));
+}
+
+async function syncInventoryFromMobilox() {
+  const inventory = await fetchMobiloxInventory();
+  const vehicles = await readVehicles();
+  const now = new Date().toISOString();
+  const activeMobiloxIds = new Set(inventory.map((item) => item.mobiloxId));
+  let created = 0;
+  let updated = 0;
+  let sold = 0;
+
+  for (const item of inventory) {
+    const existing = findExistingMobiloxVehicle(vehicles, item);
+    const id = existing?.id || `mobilox-${item.mobiloxId}`;
+    const nextVehicle = {
+      ...(existing || {}),
+      id,
+      title: item.title,
+      year: item.year || existing?.year || "",
+      mileage: item.mileage || existing?.mileage || "",
+      price: item.price || existing?.price || "",
+      status: "staat te koop",
+      imageUrl: item.imageUrl || existing?.imageUrl || "",
+      source: "Mobilox",
+      additionalInfo: existing?.additionalInfo || [
+        item.fuel ? `Brandstof: ${item.fuel}` : "",
+        item.transmission ? `Transmissie: ${item.transmission}` : ""
+      ].filter(Boolean).join("\n"),
+      todos: existing?.todos || [],
+      rdwFinnikData: existing?.rdwFinnikData || {},
+      mobiloxId: item.mobiloxId,
+      mobiloxUrl: item.detailUrl,
+      mobiloxSynced: true,
+      lastInventorySyncAt: now
+    };
+
+    await upsertVehicle(id, nextVehicle);
+    if (existing) updated += 1;
+    else created += 1;
+  }
+
+  for (const vehicle of vehicles) {
+    if (vehicle.mobiloxSynced && vehicle.mobiloxId && !activeMobiloxIds.has(vehicle.mobiloxId) && vehicle.status === "staat te koop") {
+      await upsertVehicle(vehicle.id, {
+        ...vehicle,
+        status: "verkocht",
+        lastInventorySyncAt: now
+      });
+      sold += 1;
+    }
+  }
+
+  return {
+    ok: true,
+    source: MOBILOX_INVENTORY_URL,
+    found: inventory.length,
+    created,
+    updated,
+    sold,
+    syncedAt: now
+  };
 }
 
 function cleanTodos(value) {
@@ -551,7 +709,12 @@ const server = http.createServer(async (request, response) => {
         expires: Date.now() + SESSION_MAX_AGE
       });
 
-      sendJson(response, 200, { ok: true }, {
+      const inventorySync = await syncInventoryFromMobilox().catch((error) => {
+        console.error("Mobilox voorraad sync mislukt:", error.message);
+        return { ok: false, message: error.message };
+      });
+
+      sendJson(response, 200, { ok: true, inventorySync }, {
         "Set-Cookie": `zc_session=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${SESSION_MAX_AGE / 1000}`
       });
     } catch (error) {
@@ -585,6 +748,18 @@ const server = http.createServer(async (request, response) => {
       sendJson(response, 200, { vehicles });
     } catch (error) {
       sendJson(response, 500, { ok: false, message: "Voertuigen konden niet worden geladen" });
+    }
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/sync/inventory") {
+    if (!requireSession(request, response)) return;
+
+    try {
+      const result = await syncInventoryFromMobilox();
+      sendJson(response, 200, result);
+    } catch (error) {
+      sendJson(response, 502, { ok: false, message: error.message || "Voorraad sync mislukt" });
     }
     return;
   }
@@ -759,7 +934,7 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
-  const protectedPages = ["/dashboard", "/dashboard.html", "/camper-detail", "/camper-detail.html", "/todos", "/todos.html", "/new-camper", "/new-camper.html", "/op-het-oog", "/op-het-oog.html", "/photos", "/photos.html"];
+  const protectedPages = ["/dashboard", "/dashboard.html", "/camper-detail", "/camper-detail.html", "/showroomkaart", "/showroomkaart.html", "/todos", "/todos.html", "/new-camper", "/new-camper.html", "/op-het-oog", "/op-het-oog.html", "/photos", "/photos.html"];
   if (protectedPages.includes(url.pathname) && !getSession(request)) {
     response.writeHead(302, { Location: "/login.html" });
     response.end();
@@ -769,6 +944,7 @@ const server = http.createServer(async (request, response) => {
   const routeAliases = {
     "/dashboard": "/dashboard.html",
     "/camper-detail": "/camper-detail.html",
+    "/showroomkaart": "/showroomkaart.html",
     "/todos": "/todos.html",
     "/new-camper": "/new-camper.html",
     "/op-het-oog": "/op-het-oog.html",
