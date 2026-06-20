@@ -840,13 +840,13 @@ function buildShowroomDocx({ vehicle, detail, image }) {
     showroomContent.priceBlock.length ? blankParagraphXml({ size: 20, line: 180 }) : "",
     showroomContent.priceBlock.length ? horizontalRuleXml() : "",
     showroomContent.priceBlock.length ? blankParagraphXml({ size: 20, line: 180 }) : "",
+    fullWidthProseBlockXml(showroomContent.proseItems, { size: 20, includeDivider: false }),
     layout.specs.length ? keyValueColumnsXml(layout.specs, { columns: textLength > 3800 ? 3 : 2, size: bodyFontSize, before: imageXml ? 45 : 0 }) : "",
     showroomContent.hasSecondPageContent ? pageBreakXml() : "",
     twoColumnTextXml(showroomContent.optionItems, { size: 20, textLength }),
     showroomContent.optionItems.length ? horizontalRuleXml() : "",
     showroomContent.optionItems.length ? blankParagraphXml({ size: 20, line: 180 }) : "",
     twoColumnTextXml(showroomContent.detailItems, { size: 20, textLength }),
-    fullWidthProseBlockXml(showroomContent.proseItems, { size: 20 }),
     sectPr
   ].join("");
 
@@ -948,7 +948,9 @@ function paragraphOptionsForShowroomLine(text, bodyFontSize, textLength) {
 }
 
 function splitShowroomContent(lines, sections = []) {
-  const optionItems = flattenShowroomSections(sections.filter((section) => optionSectionHeading(section.heading)));
+  const rawOptionItems = flattenShowroomSections(sections.filter((section) => optionSectionHeading(section.heading)));
+  const optionSplit = splitColumnAndProseItems(rawOptionItems);
+  const optionItems = optionSplit.columnItems;
   const otherSectionItems = flattenShowroomSections(sections.filter((section) => !optionSectionHeading(section.heading)));
   const priceIndex = lines.findIndex((text) => /^(Als-is prijs)/i.test(String(text || "").trim()));
   if (priceIndex < 0) {
@@ -960,8 +962,8 @@ function splitShowroomContent(lines, sections = []) {
       priceBlock: [],
       optionItems,
       detailItems: splitContent.columnItems,
-      proseItems: splitContent.proseItems,
-      hasSecondPageContent: Boolean(optionItems.length || splitContent.columnItems.length || splitContent.proseItems.length)
+      proseItems: optionSplit.proseItems.concat(splitContent.proseItems),
+      hasSecondPageContent: Boolean(optionItems.length || splitContent.columnItems.length)
     };
   }
 
@@ -972,7 +974,7 @@ function splitShowroomContent(lines, sections = []) {
   const afterPrice = [
     ...priceLines.slice(priceBlockEnd).map((text) => ({ text, bullet: false })),
     ...otherSectionItems,
-    ...beforePrice.map((text) => ({ text, bullet: false }))
+    ...beforePrice.map((text) => ({ text, bullet: false, prose: true }))
   ];
   const splitContent = splitColumnAndProseItems(afterPrice);
 
@@ -980,8 +982,8 @@ function splitShowroomContent(lines, sections = []) {
     priceBlock,
     optionItems,
     detailItems: splitContent.columnItems,
-    proseItems: splitContent.proseItems,
-    hasSecondPageContent: Boolean(optionItems.length || splitContent.columnItems.length || splitContent.proseItems.length)
+    proseItems: optionSplit.proseItems.concat(splitContent.proseItems),
+    hasSecondPageContent: Boolean(optionItems.length || splitContent.columnItems.length)
   };
 }
 
@@ -1033,7 +1035,7 @@ function splitColumnAndProseItems(items) {
     const text = String(item?.text || item || "").trim();
     if (!text) return result;
 
-    if (item.bullet || headingLikeLine(text)) {
+    if (!item.prose && (item.bullet || headingLikeLine(text))) {
       result.columnItems.push({ text, bullet: Boolean(item.bullet) });
     } else {
       result.proseItems.push(text);
@@ -1044,7 +1046,7 @@ function splitColumnAndProseItems(items) {
 
 function proseLikeLine(text) {
   const value = String(text || "").trim();
-  return /^Kortom\b/i.test(value) || value.length > 120;
+  return /^(Deze camper|Kortom)\b/i.test(value) || (value.length > 80 && /[.!?]$/.test(value));
 }
 
 function pricePackageEndIndex(lines) {
@@ -1164,10 +1166,11 @@ function fullWidthProseBlockXml(lines, options = {}) {
       </w:tc>
     </w:tr>`;
 
-  return blankParagraphXml({ size, line: 180 })
-    + horizontalRuleXml()
-    + blankParagraphXml({ size, line: 180 })
-    + tableXml(rowXml, 1, tableWidth, { width: tableWidth, before: 0, after: 0 });
+  const divider = options.includeDivider === false
+    ? ""
+    : blankParagraphXml({ size, line: 180 }) + horizontalRuleXml() + blankParagraphXml({ size, line: 180 });
+
+  return divider + tableXml(rowXml, 1, tableWidth, { width: tableWidth, before: 0, after: 0 });
 }
 
 function pricePackageBlockXml(lines, options = {}) {
@@ -1365,7 +1368,7 @@ function extractSectPr(documentXmlText) {
 }
 
 function showroomSectPr(sectPr) {
-  const topMargin = 2310;
+  const topMargin = 1740;
   const bottomMargin = 1050;
   const marginMatch = String(sectPr || "").match(/<w:pgMar\b[^>]*\/>/);
   if (!marginMatch) {
