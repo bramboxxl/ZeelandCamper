@@ -91,8 +91,8 @@ a {
 
 .hero {
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
-  gap: clamp(28px, 5vw, 72px);
+  grid-template-columns: minmax(0, 0.95fr) minmax(360px, 0.75fr);
+  gap: clamp(28px, 4vw, 64px);
   align-items: center;
   min-height: calc(100vh - 88px);
   padding: clamp(52px, 8vw, 110px) clamp(18px, 6vw, 88px);
@@ -102,7 +102,8 @@ a {
 }
 
 .hero-copy {
-  max-width: 780px;
+  min-width: 0;
+  max-width: min(720px, 100%);
 }
 
 .eyebrow,
@@ -125,8 +126,8 @@ p {
 h1 {
   margin-bottom: 18px;
   color: var(--deep-navy);
-  font-size: clamp(3rem, 9vw, 7.5rem);
-  line-height: 0.92;
+  font-size: clamp(3rem, 6vw, 5.8rem);
+  line-height: 0.96;
 }
 
 h2 {
@@ -182,6 +183,7 @@ h3 {
 .hero-panel {
   display: grid;
   gap: 14px;
+  min-width: 0;
   padding: clamp(24px, 4vw, 44px);
   color: var(--white);
   background: var(--deep-navy);
@@ -193,7 +195,7 @@ h3 {
   display: block;
   padding-bottom: 14px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.22);
-  font-size: clamp(1.3rem, 3vw, 2.4rem);
+  font-size: clamp(1.25rem, 2.5vw, 2.1rem);
   font-weight: 900;
   line-height: 1;
   text-transform: uppercase;
