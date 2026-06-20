@@ -807,7 +807,7 @@ function buildShowroomDocx({ vehicle, detail, image }) {
   const imageName = `showroom-photo${imageExt}`;
   const cleanedDescription = removeShowroomContactText(detail.description);
   const textLength = cleanedDescription.length;
-  const bodyFontSize = textLength > 5200 ? 16 : textLength > 3800 ? 17 : 19;
+  const bodyFontSize = textLength > 5200 ? 20 : textLength > 3800 ? 21 : 22;
   const layout = showroomLayout(detail.title, cleanedDescription);
 
   if (image?.buffer?.length) {
@@ -826,21 +826,15 @@ function buildShowroomDocx({ vehicle, detail, image }) {
   }
 
   const sectPr = adjustSectPrMargins(extractSectPr(template.get(documentPath)?.data?.toString("utf8") || "") || defaultSectPr());
-  const imageSize = image?.buffer?.length ? fitImageSize(image.buffer, 5486400, 2200000) : null;
+  const imageSize = image?.buffer?.length ? fitImageSize(image.buffer, 5486400, 2350000) : null;
   const imageXml = imageSize ? imageDrawingXml(relId, imageSize.cx, imageSize.cy) : "";
 
   const bodyXml = [
-    paragraphXml(detail.title, { size: 30, bold: true, color: "060250", after: 80 }),
+    paragraphXml(detail.title, { size: 34, bold: true, color: "060250", after: 90 }),
     imageXml,
     layout.specs.length ? keyValueColumnsXml(layout.specs, { columns: 2, size: bodyFontSize, before: imageXml ? 70 : 0 }) : "",
     layout.sections.length ? sectionColumnsXml(layout.sections, { columns: layout.sections.length >= 6 ? 3 : 2, size: bodyFontSize }) : "",
-    ...layout.remaining.map((text) => paragraphXml(text, {
-      size: bodyFontSize,
-      bold: headingLikeLine(text),
-      before: headingLikeLine(text) ? 70 : 18,
-      after: 18,
-      line: textLength > 5200 ? 190 : 210
-    })),
+    ...layout.remaining.map((text) => paragraphXml(text, paragraphOptionsForShowroomLine(text, bodyFontSize, textLength))),
     sectPr
   ].join("");
 
@@ -916,6 +910,23 @@ function headingLikeLine(text) {
   return /^(Comfort|Exterieur|Infotainment|Interieur|Overige|Belangrijkste kenmerken|Comfortabel interieur|Extra uitrusting|Onderhoud & veiligheid)$/i.test(value);
 }
 
+function paragraphOptionsForShowroomLine(text, bodyFontSize, textLength) {
+  const value = String(text || "").trim();
+  const isHeading = headingLikeLine(value);
+  const isPrice = /^(Als-is prijs|Prijs inclusief zekerhedenpakket)/i.test(value);
+  const isPackageIntro = /^Bij deze prijs wordt/i.test(value);
+  const isPackageItem = /^(3 maanden technische garantie|een volledig jaar APK|was en poetsbeurt|door de fabrikant|de tenaamstelling|oplossen inspectiepunten|6 of 12 maanden garantie)/i.test(value);
+
+  return {
+    size: isPrice ? bodyFontSize + 2 : bodyFontSize,
+    bold: isHeading || isPrice,
+    color: isPrice ? "060250" : "",
+    before: isHeading ? 90 : isPrice ? 120 : isPackageIntro ? 30 : isPackageItem ? 6 : 20,
+    after: isHeading ? 24 : isPrice ? 36 : isPackageIntro ? 42 : isPackageItem ? 10 : 20,
+    line: textLength > 5200 ? 210 : 230
+  };
+}
+
 function escapeXml(value) {
   return String(value || "")
     .replaceAll("&", "&amp;")
@@ -927,12 +938,13 @@ function escapeXml(value) {
 function paragraphXml(text, options = {}) {
   const size = options.size || 21;
   const spacing = `<w:spacing w:before="${options.before || 0}" w:after="${options.after ?? 60}" w:line="${options.line || 250}" w:lineRule="auto"/>`;
+  const justification = options.align ? `<w:jc w:val="${options.align}"/>` : "";
   const bold = options.bold ? "<w:b/>" : "";
   const color = options.color ? `<w:color w:val="${options.color}"/>` : "";
 
   return `
     <w:p>
-      <w:pPr>${spacing}</w:pPr>
+      <w:pPr>${spacing}${justification}</w:pPr>
       <w:r>
         <w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/>${bold}${color}<w:sz w:val="${size}"/><w:szCs w:val="${size}"/></w:rPr>
         <w:t xml:space="preserve">${escapeXml(text)}</w:t>
@@ -942,24 +954,26 @@ function paragraphXml(text, options = {}) {
 
 function keyValueColumnsXml(pairs, options = {}) {
   const columns = options.columns || 2;
-  const cellWidth = Math.floor(9360 / columns);
+  const tableWidth = options.width || 9000;
+  const cellWidth = Math.floor(tableWidth / columns);
   const rows = chunkArray(pairs, columns).map((row) => `
     <w:tr>
       ${Array.from({ length: columns }).map((_, index) => {
         const pair = row[index];
         return `<w:tc>
           <w:tcPr><w:tcW w:w="${cellWidth}" w:type="dxa"/><w:tcMar><w:top w:w="20" w:type="dxa"/><w:left w:w="60" w:type="dxa"/><w:bottom w:w="20" w:type="dxa"/><w:right w:w="120" w:type="dxa"/></w:tcMar></w:tcPr>
-          ${pair ? paragraphXml(`${pair[0]}: ${pair[1]}`, { size: options.size || 18, after: 0, line: 205 }) : paragraphXml("", { size: options.size || 18, after: 0, line: 205 })}
+          ${pair ? paragraphXml(`${pair[0]}: ${pair[1]}`, { size: options.size || 18, after: 0, line: 230 }) : paragraphXml("", { size: options.size || 18, after: 0, line: 230 })}
         </w:tc>`;
       }).join("")}
     </w:tr>`).join("");
 
-  return tableXml(rows, columns, cellWidth, { before: options.before || 0, after: 80 });
+  return tableXml(rows, columns, cellWidth, { width: tableWidth, before: options.before || 0, after: 90 });
 }
 
 function sectionColumnsXml(sections, options = {}) {
   const columns = options.columns || 3;
-  const cellWidth = Math.floor(9360 / columns);
+  const tableWidth = options.width || 9000;
+  const cellWidth = Math.floor(tableWidth / columns);
   const rows = chunkArray(sections, columns).map((row) => `
     <w:tr>
       ${Array.from({ length: columns }).map((_, index) => {
@@ -967,30 +981,32 @@ function sectionColumnsXml(sections, options = {}) {
         return `<w:tc>
           <w:tcPr><w:tcW w:w="${cellWidth}" w:type="dxa"/><w:tcMar><w:top w:w="40" w:type="dxa"/><w:left w:w="60" w:type="dxa"/><w:bottom w:w="40" w:type="dxa"/><w:right w:w="160" w:type="dxa"/></w:tcMar></w:tcPr>
           ${section ? [
-            paragraphXml(section.heading, { size: (options.size || 18) + 2, bold: true, after: 20, line: 205 }),
-            ...section.items.map((item) => paragraphXml(item, { size: options.size || 18, after: 0, line: 205 }))
-          ].join("") : paragraphXml("", { size: options.size || 18, after: 0, line: 205 })}
+            paragraphXml(section.heading, { size: (options.size || 18) + 2, bold: true, after: 26, line: 220 }),
+            ...section.items.map((item) => paragraphXml(item, { size: options.size || 18, after: 0, line: 225 }))
+          ].join("") : paragraphXml("", { size: options.size || 18, after: 0, line: 225 })}
         </w:tc>`;
       }).join("")}
     </w:tr>`).join("");
 
-  return tableXml(rows, columns, cellWidth, { before: 30, after: 80 });
+  return tableXml(rows, columns, cellWidth, { width: tableWidth, before: 40, after: 100 });
 }
 
 function tableXml(rowsXml, columns, cellWidth, options = {}) {
+  const tableWidth = options.width || (cellWidth * columns);
   return `
     <w:tbl>
       <w:tblPr>
-        <w:tblW w:w="9360" w:type="dxa"/>
+        <w:tblW w:w="${tableWidth}" w:type="dxa"/>
         <w:tblInd w:w="0" w:type="dxa"/>
+        <w:jc w:val="center"/>
         <w:tblBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tblBorders>
         <w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar>
         <w:tblpPr/>
       </w:tblPr>
       <w:tblGrid>${Array.from({ length: columns }).map(() => `<w:gridCol w:w="${cellWidth}"/>`).join("")}</w:tblGrid>
-      <w:tr><w:tc><w:tcPr><w:gridSpan w:val="${columns}"/><w:tcW w:w="9360" w:type="dxa"/></w:tcPr>${paragraphXml("", { before: options.before || 0, after: 0, line: 1 })}</w:tc></w:tr>
+      <w:tr><w:tc><w:tcPr><w:gridSpan w:val="${columns}"/><w:tcW w:w="${tableWidth}" w:type="dxa"/></w:tcPr>${paragraphXml("", { before: options.before || 0, after: 0, line: 1 })}</w:tc></w:tr>
       ${rowsXml}
-      <w:tr><w:tc><w:tcPr><w:gridSpan w:val="${columns}"/><w:tcW w:w="9360" w:type="dxa"/></w:tcPr>${paragraphXml("", { before: 0, after: options.after || 0, line: 1 })}</w:tc></w:tr>
+      <w:tr><w:tc><w:tcPr><w:gridSpan w:val="${columns}"/><w:tcW w:w="${tableWidth}" w:type="dxa"/></w:tcPr>${paragraphXml("", { before: 0, after: options.after || 0, line: 1 })}</w:tc></w:tr>
     </w:tbl>`;
 }
 
@@ -1010,7 +1026,7 @@ function documentXml(bodyXml) {
 function imageDrawingXml(relId, cx, cy) {
   return `
     <w:p>
-      <w:pPr><w:spacing w:before="0" w:after="80"/></w:pPr>
+      <w:pPr><w:spacing w:before="0" w:after="90"/><w:jc w:val="center"/></w:pPr>
       <w:r>
         <w:drawing>
           <wp:inline distT="0" distB="0" distL="0" distR="0">
