@@ -11,24 +11,28 @@ const SESSION_SECRET = process.env.SESSION_SECRET || "change-this-secret-on-rend
 const PUBLIC_DIR = path.join(__dirname, "public");
 const DATA_DIR = path.join(__dirname, "data");
 const VEHICLES_FILE = path.join(DATA_DIR, "vehicles.json");
+const SHOWROOM_TEMPLATE_FILE = path.join(DATA_DIR, "Word briefpapier ZeelandCamper.docx");
 const SESSION_MAX_AGE = 1000 * 60 * 60 * 8;
 const VEHICLE_STATUSES = ["Op het oog", "intake en contract", "staat te koop", "verkocht", "gaat niet door"];
 const DATABASE_URL = process.env.DATABASE_URL;
 const MOBILOX_INVENTORY_URL = process.env.MOBILOX_INVENTORY_URL || "https://occasions.mobilox.nl/3293943-camper-zeeland";
 
-if (!DATABASE_URL) {
+if (!DATABASE_URL && require.main === module) {
   throw new Error("DATABASE_URL is verplicht. Koppel een PostgreSQL database op Render.");
 }
 
-const pool = new Pool({
-  connectionString: DATABASE_URL,
-  ssl: /localhost|127\.0\.0\.1/i.test(DATABASE_URL) ? undefined : { rejectUnauthorized: false }
-});
+const pool = DATABASE_URL
+  ? new Pool({
+    connectionString: DATABASE_URL,
+    ssl: /localhost|127\.0\.0\.1/i.test(DATABASE_URL) ? undefined : { rejectUnauthorized: false }
+  })
+  : null;
 
 const sessions = new Map();
 
 const mimeTypes = {
   ".css": "text/css; charset=utf-8",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   ".html": "text/html; charset=utf-8",
   ".ico": "image/x-icon",
   ".jpg": "image/jpeg",
@@ -268,9 +272,19 @@ async function readVehiclePhoto(vehicleId, photoId) {
   return result.rows[0] || null;
 }
 
+function normalizeLicensePlateKey(value) {
+  return String(value || "").replace(/[^a-z0-9]/gi, "").toUpperCase();
+}
+
 function decodeHtml(value) {
   return String(value || "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<\/div>/gi, "\n")
+    .replace(/<\/li>/gi, "\n")
     .replace(/<[^>]+>/g, " ")
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
     .replace(/&nbsp;/g, " ")
     .replace(/&euro;/g, "€")
     .replace(/&amp;/g, "&")
@@ -279,6 +293,31 @@ function decodeHtml(value) {
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeShowroomText(value) {
+  return String(value || "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<\/div>/gi, "\n")
+    .replace(/<\/li>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
+    .replace(/&nbsp;/g, " ")
+    .replace(/&euro;/g, "€")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/[🚐🛋️🍳🌡️💡🚗🏕️⚙️]/gu, "")
+    .replace(/[✔✅]/g, "-")
+    .replace(/\u2003/g, " ")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
 
@@ -423,6 +462,443 @@ async function syncInventoryFromMobilox() {
     sold,
     syncedAt: now
   };
+}
+
+async function findVehicleByLicensePlate(licensePlate) {
+  const key = normalizeLicensePlateKey(licensePlate);
+  if (!key) return null;
+
+  let vehicles = await readVehicles();
+  let vehicle = vehicles.find((item) => normalizeLicensePlateKey(item.licensePlate) === key);
+  if (vehicle?.mobiloxUrl) return vehicle;
+
+  await syncInventoryFromMobilox().catch((error) => {
+    console.error("Mobilox voorraad sync mislukt:", error.message);
+  });
+
+  vehicles = await readVehicles();
+  vehicle = vehicles.find((item) => normalizeLicensePlateKey(item.licensePlate) === key);
+  return vehicle || null;
+}
+
+async function fetchText(urlToFetch) {
+  const response = await fetch(urlToFetch, {
+    headers: {
+      "User-Agent": "ZeelandCamper showroomkaart"
+    }
+  });
+  if (!response.ok) throw new Error(`Mobilox pagina kon niet worden opgehaald (${response.status})`);
+  return response.text();
+}
+
+async function fetchImageBuffer(imageUrl) {
+  const response = await fetch(imageUrl, {
+    headers: {
+      "User-Agent": "ZeelandCamper showroomkaart"
+    }
+  });
+  if (!response.ok) throw new Error(`Foto kon niet worden opgehaald (${response.status})`);
+  const contentType = response.headers.get("content-type") || "image/jpeg";
+  return {
+    buffer: Buffer.from(await response.arrayBuffer()),
+    contentType
+  };
+}
+
+function parseMobiloxDetail(html, fallbackVehicle) {
+  const title = decodeHtml(
+    String(html).match(/<h2[^>]*class=["'][^"']*main-title[^"']*["'][^>]*>([\s\S]*?)<\/h2>/i)?.[1]
+    || String(html).match(/<title>([\s\S]*?)<\/title>/i)?.[1]
+    || fallbackVehicle.title
+  );
+  const priceText = decodeHtml(
+    String(html).match(/<span[^>]*class=["'][^"']*mox-detail-price[^"']*["'][^>]*>([\s\S]*?)<\/span>/i)?.[1]
+    || ""
+  );
+  const price = parseEuroPrice(priceText) || fallbackVehicle.price || "";
+  const descriptionHtml = String(html).match(/<div[^>]*id=["']?descBody["']?[^>]*>([\s\S]*?)<\/div>/i)?.[1] || "";
+  const description = normalizeShowroomText(descriptionHtml || fallbackVehicle.description || fallbackVehicle.additionalInfo || fallbackVehicle.notes);
+  const imageUrl = absoluteMobiloxUrl(
+    String(html).match(/<a[^>]*class=["'][^"']*mox-show-gallery[^"']*["'][^>]*href=("[^"]+"|'[^']+'|[^\s>]+)/i)?.[1]?.replace(/^["']|["']$/g, "")
+    || String(html).match(/"uri":"([^"]+)"/i)?.[1]?.replaceAll("\\/", "/")
+    || fallbackVehicle.imageUrl
+  );
+  const specs = parseMobiloxDetailSpecs(html, fallbackVehicle);
+
+  return {
+    title: title || fallbackVehicle.title || "Camper",
+    price,
+    imageUrl,
+    description,
+    specs
+  };
+}
+
+function parseMobiloxDetailSpecs(html, vehicle) {
+  const text = decodeHtml(html);
+  const rdw = vehicle.rdwFinnikData && typeof vehicle.rdwFinnikData === "object" ? vehicle.rdwFinnikData : {};
+  const pairs = [
+    ["Kenteken", vehicle.licensePlate || rdw.licensePlate],
+    ["Bouwjaar", String(vehicle.year || rdw.firstAdmission || "").match(/\d{4}/)?.[0] || ""],
+    ["Kilometerstand", formatDisplayMileage(vehicle.mileage)],
+    ["Brandstof", rdw.fuelType || text.match(/Brandstof\s+([A-Za-z]+)/i)?.[1] || ""],
+    ["Transmissie", text.match(/Transmissie\s+([A-Za-z]+)/i)?.[1] || ""],
+    ["Zitplaatsen", rdw.seats || ""],
+    ["Afmetingen", formatDisplayDimensions(rdw)]
+  ].filter(([, value]) => String(value || "").trim());
+
+  return pairs;
+}
+
+function formatDisplayMileage(value) {
+  const number = Number(String(value || "").replace(/[^\d]/g, ""));
+  if (!number) return "";
+  return `${new Intl.NumberFormat("nl-NL").format(number)} km`;
+}
+
+function formatDisplayDimensions(data) {
+  const parts = [
+    data.length ? `${data.length} cm` : "",
+    data.width ? `${data.width} cm` : "",
+    data.height ? `${data.height} cm` : ""
+  ].filter(Boolean);
+  return parts.join(" x ");
+}
+
+function formatDisplayPrice(value) {
+  const number = Number(String(value || "").replace(/[^\d]/g, ""));
+  if (!number) return "Prijs op aanvraag";
+  return new Intl.NumberFormat("nl-NL", {
+    style: "currency",
+    currency: "EUR",
+    maximumFractionDigits: 0
+  }).format(number);
+}
+
+async function createShowroomCardDocx(licensePlate) {
+  const vehicle = await findVehicleByLicensePlate(licensePlate);
+  if (!vehicle) {
+    const error = new Error("Geen camper gevonden met dit kenteken");
+    error.status = 404;
+    throw error;
+  }
+  if (!vehicle.mobiloxUrl) {
+    const error = new Error("Deze camper heeft nog geen Mobilox advertentie gekoppeld");
+    error.status = 404;
+    throw error;
+  }
+
+  const html = await fetchText(vehicle.mobiloxUrl);
+  const detail = parseMobiloxDetail(html, vehicle);
+  if (!detail.description) {
+    const error = new Error("Geen advertentietekst gevonden op de Mobilox pagina");
+    error.status = 422;
+    throw error;
+  }
+
+  const image = detail.imageUrl ? await fetchImageBuffer(detail.imageUrl) : null;
+  const docx = buildShowroomDocx({
+    vehicle,
+    detail,
+    image
+  });
+  const fileBase = `${normalizeLicensePlateKey(vehicle.licensePlate || licensePlate)} showroomkaart`;
+
+  return {
+    fileName: `${fileBase}.docx`,
+    buffer: docx
+  };
+}
+
+function buildShowroomDocx({ vehicle, detail, image }) {
+  const template = fs.existsSync(SHOWROOM_TEMPLATE_FILE)
+    ? readZipEntries(fs.readFileSync(SHOWROOM_TEMPLATE_FILE))
+    : createEmptyDocxEntries();
+  const relsPath = "word/_rels/document.xml.rels";
+  const contentTypesPath = "[Content_Types].xml";
+  const documentPath = "word/document.xml";
+  const relId = nextRelationshipId(template.get(relsPath)?.data?.toString("utf8") || "");
+  const imageExt = imageExtension(image?.contentType);
+  const imageName = `showroom-photo${imageExt}`;
+  const textLength = detail.description.length;
+  const bodyFontSize = textLength > 4200 ? 18 : textLength > 2800 ? 19 : 21;
+  const introFontSize = textLength > 4200 ? 20 : 22;
+  const paragraphs = splitDescription(detail.description);
+
+  if (image?.buffer?.length) {
+    template.set(`word/media/${imageName}`, {
+      data: image.buffer,
+      method: 0
+    });
+    template.set(relsPath, {
+      data: Buffer.from(addRelationship(template.get(relsPath)?.data?.toString("utf8") || defaultDocumentRels(), relId, `media/${imageName}`)),
+      method: 0
+    });
+    template.set(contentTypesPath, {
+      data: Buffer.from(addImageContentType(template.get(contentTypesPath)?.data?.toString("utf8") || defaultContentTypes(), imageExt, image.contentType)),
+      method: 0
+    });
+  }
+
+  const sectPr = extractSectPr(template.get(documentPath)?.data?.toString("utf8") || "") || defaultSectPr();
+  const imageXml = image?.buffer?.length ? imageDrawingXml(relId, 5486400, 3291840) : "";
+  const specs = detail.specs.length
+    ? detail.specs.map(([label, value]) => `${label}: ${value}`).join("   |   ")
+    : `Kenteken: ${vehicle.licensePlate || ""}`;
+
+  const bodyXml = [
+    paragraphXml(detail.title, { size: 34, bold: true, color: "060250", after: 90 }),
+    paragraphXml(formatDisplayPrice(detail.price), { size: 30, bold: true, color: "E0573F", after: 140 }),
+    imageXml,
+    paragraphXml(specs, { size: introFontSize, bold: true, color: "2F88B9", before: imageXml ? 180 : 0, after: 150 }),
+    ...paragraphs.map((text, index) => paragraphXml(text, {
+      size: bodyFontSize,
+      bold: index < 2,
+      before: index === 0 ? 0 : 35,
+      after: 35,
+      line: textLength > 4200 ? 218 : 238
+    })),
+    sectPr
+  ].join("");
+
+  template.set(documentPath, {
+    data: Buffer.from(documentXml(bodyXml)),
+    method: 0
+  });
+
+  return writeZipEntries(template);
+}
+
+function splitDescription(text) {
+  return String(text || "")
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 80);
+}
+
+function escapeXml(value) {
+  return String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function paragraphXml(text, options = {}) {
+  const size = options.size || 21;
+  const spacing = `<w:spacing w:before="${options.before || 0}" w:after="${options.after ?? 60}" w:line="${options.line || 250}" w:lineRule="auto"/>`;
+  const bold = options.bold ? "<w:b/>" : "";
+  const color = options.color ? `<w:color w:val="${options.color}"/>` : "";
+
+  return `
+    <w:p>
+      <w:pPr>${spacing}</w:pPr>
+      <w:r>
+        <w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/>${bold}${color}<w:sz w:val="${size}"/><w:szCs w:val="${size}"/></w:rPr>
+        <w:t xml:space="preserve">${escapeXml(text)}</w:t>
+      </w:r>
+    </w:p>`;
+}
+
+function documentXml(bodyXml) {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:wpc="http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas" xmlns:cx="http://schemas.microsoft.com/office/drawing/2014/chartex" xmlns:cx1="http://schemas.microsoft.com/office/drawing/2015/9/8/chartex" xmlns:cx2="http://schemas.microsoft.com/office/drawing/2015/10/21/chartex" xmlns:cx3="http://schemas.microsoft.com/office/drawing/2016/5/9/chartex" xmlns:cx4="http://schemas.microsoft.com/office/drawing/2016/5/10/chartex" xmlns:cx5="http://schemas.microsoft.com/office/drawing/2016/5/11/chartex" xmlns:cx6="http://schemas.microsoft.com/office/drawing/2016/5/12/chartex" xmlns:cx7="http://schemas.microsoft.com/office/drawing/2016/5/13/chartex" xmlns:cx8="http://schemas.microsoft.com/office/drawing/2016/5/14/chartex" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:aink="http://schemas.microsoft.com/office/drawing/2016/ink" xmlns:am3d="http://schemas.microsoft.com/office/drawing/2017/model3d" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:wp14="http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:w10="urn:schemas-microsoft-com:office:word" xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml" xmlns:w16cex="http://schemas.microsoft.com/office/word/2018/wordml/cex" xmlns:w16cid="http://schemas.microsoft.com/office/word/2016/wordml/cid" xmlns:w16="http://schemas.microsoft.com/office/word/2018/wordml" xmlns:w16du="http://schemas.microsoft.com/office/word/2023/wordml/word16du" xmlns:w16sdtdh="http://schemas.microsoft.com/office/word/2020/wordml/sdtdatahash" xmlns:w16se="http://schemas.microsoft.com/office/word/2015/wordml/symex" xmlns:sl="http://schemas.openxmlformats.org/schemaLibrary/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" mc:Ignorable="w14 w15 w16se w16cid w16 w16cex w16sdtdh w16du wp14"><w:body>${bodyXml}</w:body></w:document>`;
+}
+
+function imageDrawingXml(relId, cx, cy) {
+  return `
+    <w:p>
+      <w:pPr><w:spacing w:before="0" w:after="80"/></w:pPr>
+      <w:r>
+        <w:drawing>
+          <wp:inline distT="0" distB="0" distL="0" distR="0">
+            <wp:extent cx="${cx}" cy="${cy}"/>
+            <wp:effectExtent l="0" t="0" r="0" b="0"/>
+            <wp:docPr id="1" name="Showroomfoto"/>
+            <wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>
+            <a:graphic>
+              <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">
+                <pic:pic>
+                  <pic:nvPicPr><pic:cNvPr id="0" name="Showroomfoto"/><pic:cNvPicPr/></pic:nvPicPr>
+                  <pic:blipFill><a:blip r:embed="${relId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>
+                  <pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>
+                </pic:pic>
+              </a:graphicData>
+            </a:graphic>
+          </wp:inline>
+        </w:drawing>
+      </w:r>
+    </w:p>`;
+}
+
+function extractSectPr(documentXmlText) {
+  return documentXmlText.match(/<w:sectPr[\s\S]*<\/w:sectPr>/)?.[0] || "";
+}
+
+function defaultSectPr() {
+  return `<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="900" w:right="900" w:bottom="900" w:left="900" w:header="450" w:footer="450" w:gutter="0"/></w:sectPr>`;
+}
+
+function defaultDocumentRels() {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>`;
+}
+
+function addRelationship(xml, id, target) {
+  if (xml.includes(`Id="${id}"`)) return xml;
+  const relationship = `<Relationship Id="${id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${target}"/>`;
+  return xml.replace("</Relationships>", `${relationship}</Relationships>`);
+}
+
+function nextRelationshipId(xml) {
+  const ids = [...String(xml || "").matchAll(/Id="rId(\d+)"/g)].map((match) => Number(match[1]));
+  return `rId${Math.max(0, ...ids) + 1}`;
+}
+
+function defaultContentTypes() {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`;
+}
+
+function addImageContentType(xml, ext, contentType) {
+  const extension = ext.replace(".", "");
+  if (xml.includes(`Extension="${extension}"`)) return xml;
+  return xml.replace("</Types>", `<Default Extension="${extension}" ContentType="${contentType || "image/jpeg"}"/></Types>`);
+}
+
+function imageExtension(contentType) {
+  if (/png/i.test(contentType || "")) return ".png";
+  if (/webp/i.test(contentType || "")) return ".webp";
+  return ".jpg";
+}
+
+function createEmptyDocxEntries() {
+  const entries = new Map();
+  entries.set("[Content_Types].xml", { data: Buffer.from(defaultContentTypes()), method: 0 });
+  entries.set("_rels/.rels", {
+    data: Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`),
+    method: 0
+  });
+  entries.set("word/_rels/document.xml.rels", { data: Buffer.from(defaultDocumentRels()), method: 0 });
+  entries.set("word/document.xml", { data: Buffer.from(documentXml(defaultSectPr())), method: 0 });
+  return entries;
+}
+
+const crcTable = Array.from({ length: 256 }, (_, index) => {
+  let crc = index;
+  for (let bit = 0; bit < 8; bit += 1) {
+    crc = (crc & 1) ? (0xedb88320 ^ (crc >>> 1)) : (crc >>> 1);
+  }
+  return crc >>> 0;
+});
+
+function crc32(buffer) {
+  let crc = 0xffffffff;
+  for (const byte of buffer) {
+    crc = crcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function readZipEntries(buffer) {
+  const entries = new Map();
+  const eocdOffset = findEndOfCentralDirectory(buffer);
+  const centralDirectorySize = buffer.readUInt32LE(eocdOffset + 12);
+  const centralDirectoryOffset = buffer.readUInt32LE(eocdOffset + 16);
+  let offset = centralDirectoryOffset;
+  const end = centralDirectoryOffset + centralDirectorySize;
+
+  while (offset < end) {
+    if (buffer.readUInt32LE(offset) !== 0x02014b50) break;
+    const method = buffer.readUInt16LE(offset + 10);
+    const compressedSize = buffer.readUInt32LE(offset + 20);
+    const uncompressedSize = buffer.readUInt32LE(offset + 24);
+    const fileNameLength = buffer.readUInt16LE(offset + 28);
+    const extraLength = buffer.readUInt16LE(offset + 30);
+    const commentLength = buffer.readUInt16LE(offset + 32);
+    const localHeaderOffset = buffer.readUInt32LE(offset + 42);
+    const name = buffer.subarray(offset + 46, offset + 46 + fileNameLength).toString("utf8");
+    const localNameLength = buffer.readUInt16LE(localHeaderOffset + 26);
+    const localExtraLength = buffer.readUInt16LE(localHeaderOffset + 28);
+    const dataOffset = localHeaderOffset + 30 + localNameLength + localExtraLength;
+    const compressedData = buffer.subarray(dataOffset, dataOffset + compressedSize);
+    const data = method === 8 ? require("zlib").inflateRawSync(compressedData) : Buffer.from(compressedData);
+
+    if (data.length === uncompressedSize) {
+      entries.set(name, { data, method: 0 });
+    }
+
+    offset += 46 + fileNameLength + extraLength + commentLength;
+  }
+
+  return entries;
+}
+
+function findEndOfCentralDirectory(buffer) {
+  for (let offset = buffer.length - 22; offset >= 0; offset -= 1) {
+    if (buffer.readUInt32LE(offset) === 0x06054b50) return offset;
+  }
+  throw new Error("Ongeldig Word-template");
+}
+
+function writeZipEntries(entries) {
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+
+  for (const [name, entry] of entries) {
+    const data = Buffer.isBuffer(entry.data) ? entry.data : Buffer.from(entry.data || "");
+    const fileName = Buffer.from(name);
+    const checksum = crc32(data);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(0, 6);
+    local.writeUInt16LE(0, 8);
+    local.writeUInt16LE(0, 10);
+    local.writeUInt16LE(0, 12);
+    local.writeUInt32LE(checksum, 14);
+    local.writeUInt32LE(data.length, 18);
+    local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(fileName.length, 26);
+    local.writeUInt16LE(0, 28);
+    localParts.push(local, fileName, data);
+
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(0, 8);
+    central.writeUInt16LE(0, 10);
+    central.writeUInt16LE(0, 12);
+    central.writeUInt16LE(0, 14);
+    central.writeUInt32LE(checksum, 16);
+    central.writeUInt32LE(data.length, 20);
+    central.writeUInt32LE(data.length, 24);
+    central.writeUInt16LE(fileName.length, 28);
+    central.writeUInt16LE(0, 30);
+    central.writeUInt16LE(0, 32);
+    central.writeUInt16LE(0, 34);
+    central.writeUInt16LE(0, 36);
+    central.writeUInt32LE(0, 38);
+    central.writeUInt32LE(offset, 42);
+    centralParts.push(central, fileName);
+
+    offset += local.length + fileName.length + data.length;
+  }
+
+  const centralDirectoryOffset = offset;
+  const centralDirectory = Buffer.concat(centralParts);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(0, 4);
+  eocd.writeUInt16LE(0, 6);
+  eocd.writeUInt16LE(entries.size, 8);
+  eocd.writeUInt16LE(entries.size, 10);
+  eocd.writeUInt32LE(centralDirectory.length, 12);
+  eocd.writeUInt32LE(centralDirectoryOffset, 16);
+  eocd.writeUInt16LE(0, 20);
+
+  return Buffer.concat([...localParts, centralDirectory, eocd]);
 }
 
 function cleanTodos(value) {
@@ -764,6 +1240,27 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  if (request.method === "POST" && url.pathname === "/api/showroomkaart") {
+    try {
+      const body = await readBody(request);
+      const payload = JSON.parse(body || "{}");
+      const result = await createShowroomCardDocx(payload.licensePlate);
+
+      response.writeHead(200, {
+        "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "Content-Disposition": `attachment; filename="${encodeURIComponent(result.fileName)}"`,
+        "Cache-Control": "no-store"
+      });
+      response.end(result.buffer);
+    } catch (error) {
+      sendJson(response, error.status || 500, {
+        ok: false,
+        message: error.message || "Showroomkaart kon niet worden gemaakt"
+      });
+    }
+    return;
+  }
+
   if (request.method === "GET" && lookupMatch) {
     if (!requireSession(request, response)) return;
 
@@ -934,7 +1431,7 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
-  const protectedPages = ["/dashboard", "/dashboard.html", "/camper-detail", "/camper-detail.html", "/showroomkaart", "/showroomkaart.html", "/todos", "/todos.html", "/new-camper", "/new-camper.html", "/op-het-oog", "/op-het-oog.html", "/photos", "/photos.html"];
+  const protectedPages = ["/dashboard", "/dashboard.html", "/camper-detail", "/camper-detail.html", "/todos", "/todos.html", "/new-camper", "/new-camper.html", "/op-het-oog", "/op-het-oog.html", "/photos", "/photos.html"];
   if (protectedPages.includes(url.pathname) && !getSession(request)) {
     response.writeHead(302, { Location: "/login.html" });
     response.end();
@@ -961,13 +1458,22 @@ const server = http.createServer(async (request, response) => {
   serveFile(response, filePath);
 });
 
-initDatabase()
-  .then(() => {
-    server.listen(PORT, () => {
-      console.log(`ZeelandCamper draait op http://localhost:${PORT}`);
+if (require.main === module) {
+  initDatabase()
+    .then(() => {
+      server.listen(PORT, () => {
+        console.log(`ZeelandCamper draait op http://localhost:${PORT}`);
+      });
+    })
+    .catch((error) => {
+      console.error("Database initialisatie mislukt:", error);
+      process.exit(1);
     });
-  })
-  .catch((error) => {
-    console.error("Database initialisatie mislukt:", error);
-    process.exit(1);
-  });
+}
+
+module.exports = {
+  buildShowroomDocx,
+  parseMobiloxDetail,
+  normalizeShowroomText,
+  readZipEntries
+};

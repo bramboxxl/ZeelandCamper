@@ -15,6 +15,7 @@
   const list = document.querySelector("#vehicle-list");
   const count = document.querySelector("#vehicle-count");
   const firstDetailLink = document.querySelector("#first-detail-link");
+  const firstShowroomkaartLink = document.querySelector("#first-showroomkaart-link");
 
   const vehiclesResponse = await fetch("/api/vehicles");
   const data = await vehiclesResponse.json();
@@ -25,10 +26,12 @@
   if (!vehicles.length) {
     list.innerHTML = `<p class="empty-state">Nog geen campers in de database.</p>`;
     firstDetailLink.setAttribute("aria-disabled", "true");
+    firstShowroomkaartLink.setAttribute("aria-disabled", "true");
     return;
   }
 
   firstDetailLink.href = `/camper-detail.html?id=${encodeURIComponent(vehicles[0].id)}`;
+  firstShowroomkaartLink.href = "/showroomkaart.html";
   renderVehicles();
 
   list.addEventListener("change", async (event) => {
@@ -74,6 +77,7 @@
           <p>${escapeHtml(vehicle.notes || vehicle.additionalInfo || vehicle.description || "Geen opmerking")}</p>
           <small>Camper ${index + 1} van ${vehicles.length}</small>
         </a>
+        <a class="secondary-button small-button overview-action" href="/showroomkaart.html?kenteken=${encodeURIComponent(vehicle.licensePlate || "")}">Showroomkaart</a>
         <label class="status-control">
           Status
           <select class="status-select">

@@ -21,7 +21,7 @@
   try {
     const response = await fetch("/api/vehicles");
     const data = await response.json();
-    const vehicles = data.vehicles || [];
+    const vehicles = (data.vehicles || []).filter((vehicle) => (vehicle.status || "staat te koop") === "staat te koop");
 
     if (!vehicles.length) {
       grid.innerHTML = `
@@ -37,20 +37,42 @@
       return;
     }
 
-    grid.innerHTML = vehicles.map((vehicle, index) => `
-      <article class="camper-card">
-        ${vehicle.imageUrl
-          ? `<img class="vehicle-photo" src="${escapeHtml(vehicle.imageUrl)}" alt="${escapeHtml(vehicle.title)}">`
-          : `<div class="camper-image camper-image-${(index % 3) + 1}"></div>`}
-        <div>
-          <p class="card-kicker">${escapeHtml(vehicle.sourceId || vehicle.licensePlate || "Camper")}</p>
-          <h3>${escapeHtml(vehicle.title)}</h3>
-          <p>${vehicle.licensePlate ? `${escapeHtml(vehicle.licensePlate)} · ` : ""}${vehicle.year ? `${escapeHtml(vehicle.year)} · ` : ""}${escapeHtml(vehicle.color)}</p>
-          <p>${formatMileage(vehicle.mileage)}${vehicle.price ? ` · ${formatPrice(vehicle.price)}` : ""}</p>
-          <p>${escapeHtml(vehicle.additionalInfo || vehicle.description || vehicle.notes)}</p>
-        </div>
-      </article>
-    `).join("");
+    grid.innerHTML = vehicles.map((vehicle, index) => {
+      const photo = firstVehiclePhoto(vehicle);
+      const showroomUrl = `/showroomkaart.html?id=${encodeURIComponent(vehicle.id)}`;
+
+      return `
+        <article class="camper-card showroom-select-card" data-showroom-url="${escapeHtml(showroomUrl)}" data-kenteken="${escapeHtml(vehicle.licensePlate || "")}">
+          ${photo
+            ? `<img class="vehicle-photo" src="${escapeHtml(photo)}" alt="${escapeHtml(vehicle.title)}">`
+            : `<div class="camper-image camper-image-${(index % 3) + 1}"></div>`}
+          <div>
+            <p class="card-kicker">${escapeHtml(vehicle.sourceId || vehicle.licensePlate || "Camper")}</p>
+            <h3>${escapeHtml(vehicle.title)}</h3>
+            <p>${vehicle.licensePlate ? `${escapeHtml(vehicle.licensePlate)} - ` : ""}${vehicle.year ? `${escapeHtml(vehicle.year)} - ` : ""}${escapeHtml(vehicle.color)}</p>
+            <p>${formatMileage(vehicle.mileage)}${vehicle.price ? ` - ${formatPrice(vehicle.price)}` : ""}</p>
+            <p>${escapeHtml(vehicle.additionalInfo || vehicle.description || vehicle.notes || "Klik om een showroomkaart te maken.")}</p>
+            <button class="primary-button small-button showroom-card-button" type="button">Genereer showroomkaart</button>
+          </div>
+        </article>
+      `;
+    }).join("");
+
+    grid.addEventListener("click", (event) => {
+      const card = event.target.closest(".showroom-select-card");
+      if (!card) return;
+
+      const currentKenteken = card.dataset.kenteken || "";
+      const kenteken = currentKenteken || window.prompt("Vul het kenteken in voor deze showroomkaart:", "");
+      if (kenteken === null) return;
+
+      const url = new URL(card.dataset.showroomUrl, window.location.origin);
+      if (kenteken.trim()) {
+        url.searchParams.set("kenteken", kenteken.trim());
+      }
+
+      window.location.href = url.toString();
+    });
   } catch {
     grid.innerHTML = `
       <article class="camper-card">
@@ -64,6 +86,13 @@
     `;
   }
 })();
+
+function firstVehiclePhoto(vehicle) {
+  const photos = Array.isArray(vehicle.photos) ? vehicle.photos : [];
+  const selected = photos.find((photo) => photo.selected) || photos[0];
+  if (selected?.url) return selected.url;
+  return vehicle.imageUrl || "";
+}
 
 function escapeHtml(value) {
   return String(value || "")

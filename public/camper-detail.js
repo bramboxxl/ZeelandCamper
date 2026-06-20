@@ -20,6 +20,7 @@
   const positionLabel = document.querySelector("#position-label");
   const previousLink = document.querySelector("#previous-vehicle");
   const nextLink = document.querySelector("#next-vehicle");
+  const showroomkaartLink = document.querySelector("#showroomkaart-link");
   const photosLink = document.querySelector("#photos-link");
   const todoList = document.querySelector("#todo-list");
   const todosField = document.querySelector("#todos-field");
@@ -50,6 +51,7 @@
 
   previousLink.href = `/camper-detail.html?id=${encodeURIComponent(previousVehicle.id)}`;
   nextLink.href = `/camper-detail.html?id=${encodeURIComponent(nextVehicle.id)}`;
+  showroomkaartLink.href = `/showroomkaart.html?kenteken=${encodeURIComponent(vehicle.licensePlate || "")}`;
   photosLink.href = `/photos.html?id=${encodeURIComponent(vehicle.id)}`;
   positionLabel.textContent = `${selectedIndex + 1} / ${vehicles.length}`;
   pageTitle.textContent = vehicle.sourceId || vehicle.id;

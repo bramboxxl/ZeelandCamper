@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="nl">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Showroomkaart | ZeelandCamper</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script defer src="/showroomkaart.js"></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="ZeelandCamper home">
+        <img src="/assets/logo-zeelandcamper-web.jpg" alt="ZeelandCamper">
+      </a>
+      <nav class="top-nav" aria-label="Hoofdnavigatie">
+        <a href="/dashboard">Dashboard</a>
+        <button class="nav-button" id="logout-button" type="button">Uitloggen</button>
+      </nav>
+    </header>
+
+    <main class="dashboard-shell">
+      <section class="dashboard-hero">
+        <p class="eyebrow">Showroomkaart</p>
+        <h1>Wordbestand maken</h1>
+        <p>Vul het kenteken in. De advertentietekst en foto worden uit Mobilox gehaald en in het ZeelandCamper briefpapier gezet.</p>
+      </section>
+
+      <section class="choice-bar" aria-label="Keuzes">
+        <a class="secondary-button small-button" href="/dashboard">Overzicht</a>
+        <a class="secondary-button small-button" href="/camper-detail.html">Camperdetails</a>
+        <a class="primary-button small-button" href="/showroomkaart">Showroomkaart</a>
+      </section>
+
+      <form class="vehicle-form showroom-form" id="showroom-form">
+        <label>
+          Kenteken
+          <input type="text" name="licensePlate" id="license-plate" placeholder="Bijv. 89-BKT-1" autocomplete="off" required>
+        </label>
+        <button class="primary-button" id="showroom-submit" type="submit">Showroomkaart downloaden</button>
+        <p class="form-message" id="showroom-message" role="status"></p>
+      </form>
+    </main>
+  </body>
+</html>
