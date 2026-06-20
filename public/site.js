@@ -104,17 +104,20 @@ async function downloadShowroomCard(payload, button) {
 
   try {
     let response = await requestShowroomCard(payload);
+    let errorResult = null;
 
     if (!response.ok) {
-      const result = await response.json().catch(() => ({}));
-      if (result.code === "missing_mobilox_credentials") {
+      errorResult = await readErrorResponse(response);
+      if (errorResult.code === "missing_mobilox_credentials") {
         mobiloxCredentials = await askMobiloxCredentials();
         response = await requestShowroomCard(payload);
+        errorResult = null;
       }
     }
 
     if (!response.ok) {
-      throw new Error(await responseErrorMessage(response));
+      errorResult = errorResult || await readErrorResponse(response);
+      throw new Error(errorResult.message || `Showroomkaart maken mislukt (${response.status})`);
     }
 
     const blob = await response.blob();
@@ -135,15 +138,26 @@ async function downloadShowroomCard(payload, button) {
   }
 }
 
-async function responseErrorMessage(response) {
+async function readErrorResponse(response) {
   const text = await response.text().catch(() => "");
-  if (!text) return `Showroomkaart maken mislukt (${response.status})`;
+  if (!text) {
+    return {
+      code: "",
+      message: `Showroomkaart maken mislukt (${response.status})`
+    };
+  }
 
   try {
     const result = JSON.parse(text);
-    return result.message || `Showroomkaart maken mislukt (${response.status})`;
+    return {
+      code: result.code || "",
+      message: result.message || `Showroomkaart maken mislukt (${response.status})`
+    };
   } catch {
-    return text.slice(0, 240) || `Showroomkaart maken mislukt (${response.status})`;
+    return {
+      code: "",
+      message: text.slice(0, 240) || `Showroomkaart maken mislukt (${response.status})`
+    };
   }
 }
 
