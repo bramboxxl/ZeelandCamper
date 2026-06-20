@@ -828,11 +828,11 @@ function buildShowroomDocx({ vehicle, detail, image }) {
 
   const originalDocumentXml = ensureDrawingNamespaces(template.get(documentPath)?.data?.toString("utf8") || documentXml(defaultSectPr()));
   const sectPr = showroomSectPr(extractSectPr(originalDocumentXml) || defaultSectPr());
-  const imageSize = image?.buffer?.length ? fitImageSize(image.buffer, 5486400, 2000000) : null;
+  const imageSize = image?.buffer?.length ? fixedImageWidth(image.buffer, 5040000) : null;
   const imageXml = imageSize ? imageDrawingXml(relId, imageSize.cx, imageSize.cy) : "";
 
   const bodyXml = [
-    paragraphXml(detail.title, { size: 30, bold: true, color: "060250", after: 70, line: 300 }),
+    paragraphXml(detail.title, { size: 30, bold: true, color: "060250", after: 70, line: 300, align: "center" }),
     imageXml,
     layout.specs.length ? keyValueColumnsXml(layout.specs, { columns: textLength > 3800 ? 3 : 2, size: bodyFontSize, before: imageXml ? 45 : 0 }) : "",
     showroomRemainingXml(layout.remaining, bodyFontSize, textLength, layout.sections),
@@ -952,9 +952,12 @@ function showroomRemainingXml(lines, bodyFontSize, textLength, sections = []) {
   const afterPrice = priceLines.slice(priceBlockEnd).concat(flattenShowroomSections(sections), beforePrice);
 
   return pageBreakXml()
-    + pricePackageBlockXml(priceBlock, { size: Math.max(16, bodyFontSize) })
+    + pricePackageBlockXml(priceBlock, { size: 24 })
+    + blankParagraphXml({ size: 20, line: 180 })
+    + horizontalRuleXml()
+    + blankParagraphXml({ size: 20, line: 180 })
     + twoColumnTextXml(afterPrice, {
-    size: Math.max(16, bodyFontSize - 1),
+    size: 20,
     textLength
   });
 }
@@ -1007,6 +1010,25 @@ function pageBreakXml() {
     </w:p>`;
 }
 
+function blankParagraphXml(options = {}) {
+  return paragraphXml("", {
+    size: options.size || 20,
+    before: 0,
+    after: 0,
+    line: options.line || 200
+  });
+}
+
+function horizontalRuleXml() {
+  return `
+    <w:p>
+      <w:pPr>
+        <w:spacing w:before="0" w:after="0" w:line="1" w:lineRule="auto"/>
+        <w:pBdr><w:bottom w:val="single" w:sz="8" w:space="1" w:color="B8B8B8"/></w:pBdr>
+      </w:pPr>
+    </w:p>`;
+}
+
 function twoColumnTextXml(lines, options = {}) {
   const columns = 2;
   const tableWidth = options.width || 9000;
@@ -1037,24 +1059,34 @@ function pricePackageBlockXml(lines, options = {}) {
   if (!lines.length) return "";
 
   const tableWidth = options.width || 9000;
+  const size = options.size || 24;
   const rowXml = `
     <w:tr>
       <w:tc>
         <w:tcPr><w:tcW w:w="${tableWidth}" w:type="dxa"/><w:tcMar><w:top w:w="0" w:type="dxa"/><w:left w:w="80" w:type="dxa"/><w:bottom w:w="80" w:type="dxa"/><w:right w:w="120" w:type="dxa"/></w:tcMar></w:tcPr>
         ${lines.map((text, index) => {
-          const paragraphOptions = paragraphOptionsForShowroomLine(text, options.size || 18, 0);
+          const value = String(text || "").trim();
           const isFirstLine = index === 0;
-          return paragraphXml(text, {
-            ...paragraphOptions,
-            before: isFirstLine ? 0 : Math.min(paragraphOptions.before || 0, 34),
-            after: Math.min(paragraphOptions.after || 0, 20),
-            line: 205
+          const startsSecondPriceOption = /^Prijs inclusief zekerhedenpakket/i.test(value);
+          const isPrice = /^(Als-is prijs|Prijs inclusief zekerhedenpakket)/i.test(value);
+          const before = isFirstLine || startsSecondPriceOption ? 0 : 10;
+          const after = isPrice ? 18 : 8;
+          const paragraph = paragraphXml(text, {
+            size,
+            bold: isPrice,
+            color: isPrice ? "060250" : "",
+            before,
+            after,
+            line: 230
           });
+
+          if (!startsSecondPriceOption) return paragraph;
+          return blankParagraphXml({ size, line: 230 }) + paragraph;
         }).join("")}
       </w:tc>
     </w:tr>`;
 
-  return tableXml(rowXml, 1, tableWidth, { width: tableWidth, before: 0, after: 45 });
+  return tableXml(rowXml, 1, tableWidth, { width: tableWidth, before: 0, after: 0 });
 }
 
 function keyValueColumnsXml(pairs, options = {}) {
@@ -1166,6 +1198,16 @@ function fitImageSize(buffer, maxCx, maxCy) {
     cx = Math.round(cy * ratio);
   }
   return { cx, cy };
+}
+
+function fixedImageWidth(buffer, cx) {
+  const dimensions = imageDimensions(buffer);
+  if (!dimensions) return { cx, cy: Math.round(cx * 0.55) };
+
+  return {
+    cx,
+    cy: Math.round(cx * (dimensions.height / dimensions.width))
+  };
 }
 
 function imageDimensions(buffer) {
