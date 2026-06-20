@@ -1313,7 +1313,7 @@ function extractSectPr(documentXmlText) {
 }
 
 function showroomSectPr(sectPr) {
-  const topMargin = 2550;
+  const topMargin = 2310;
   const bottomMargin = 1050;
   const marginMatch = String(sectPr || "").match(/<w:pgMar\b[^>]*\/>/);
   if (!marginMatch) {
