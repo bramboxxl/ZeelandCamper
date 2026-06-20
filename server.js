@@ -826,7 +826,7 @@ function buildShowroomDocx({ vehicle, detail, image }) {
     });
   }
 
-  const originalDocumentXml = template.get(documentPath)?.data?.toString("utf8") || documentXml(defaultSectPr());
+  const originalDocumentXml = ensureDrawingNamespaces(template.get(documentPath)?.data?.toString("utf8") || documentXml(defaultSectPr()));
   const sectPr = extractSectPr(originalDocumentXml) || defaultSectPr();
   const imageSize = image?.buffer?.length ? fitImageSize(image.buffer, 5486400, 2350000) : null;
   const imageXml = imageSize ? imageDrawingXml(relId, imageSize.cx, imageSize.cy) : "";
@@ -1108,6 +1108,19 @@ function replaceDocumentBodyContent(originalDocumentXml, bodyXml) {
   if (!bodyMatch) return documentXml(bodyXml);
 
   return xml.replace(/<w:body>[\s\S]*<\/w:body>/, `<w:body>${bodyXml}</w:body>`);
+}
+
+function ensureDrawingNamespaces(documentXmlText) {
+  const requiredNamespaces = [
+    ["a", "http://schemas.openxmlformats.org/drawingml/2006/main"],
+    ["pic", "http://schemas.openxmlformats.org/drawingml/2006/picture"],
+    ["wp", "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"]
+  ];
+
+  return requiredNamespaces.reduce((xml, [prefix, uri]) => {
+    if (xml.includes(`xmlns:${prefix}=`)) return xml;
+    return xml.replace(/<w:document\b/, `<w:document xmlns:${prefix}="${uri}"`);
+  }, String(documentXmlText || ""));
 }
 
 function defaultSectPr() {
