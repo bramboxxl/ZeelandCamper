@@ -857,7 +857,7 @@ function removeShowroomContactText(text) {
 }
 
 function showroomLayout(title, text) {
-  const lines = String(text || "")
+  const lines = normalizeShowroomLineBreaks(text)
     .split(/\n+/)
     .map((line) => line.trim())
     .filter(Boolean)
@@ -896,6 +896,14 @@ function showroomLayout(title, text) {
   }
 
   return { specs, sections, remaining };
+}
+
+function normalizeShowroomLineBreaks(text) {
+  return String(text || "")
+    .replace(/(\b\d{1,3}(?:\.\d{3})*,\d{2})(?=3 maanden technische garantie)/gi, "$1\n")
+    .replace(/(€\s*[\d.]+,\d{2})(?=3 maanden technische garantie)/gi, "$1\n")
+    .replace(/(Prijs inclusief zekerhedenpakket[^\n]*?€\s*[\d.]+,\d{2})\s*(3 maanden technische garantie)/gi, "$1\n$2")
+    .replace(/(Als-is prijs[^\n]*?€\s*[\d.]+,\d{2})\s*(Bij deze prijs)/gi, "$1\n$2");
 }
 
 function parseKeyValueLine(line) {
@@ -938,9 +946,14 @@ function showroomRemainingXml(lines, bodyFontSize, textLength, sections = []) {
   }
 
   const beforePrice = lines.slice(0, priceIndex);
-  const priceAndAfter = lines.slice(priceIndex).concat(flattenShowroomSections(sections), beforePrice);
+  const priceLines = lines.slice(priceIndex);
+  const priceBlockEnd = pricePackageEndIndex(priceLines);
+  const priceBlock = priceLines.slice(0, priceBlockEnd);
+  const afterPrice = priceLines.slice(priceBlockEnd).concat(flattenShowroomSections(sections), beforePrice);
 
-  return pageBreakXml() + twoColumnTextXml(priceAndAfter, {
+  return pageBreakXml()
+    + pricePackageBlockXml(priceBlock, { size: Math.max(16, bodyFontSize) })
+    + twoColumnTextXml(afterPrice, {
     size: Math.max(16, bodyFontSize - 1),
     textLength
   });
@@ -948,6 +961,17 @@ function showroomRemainingXml(lines, bodyFontSize, textLength, sections = []) {
 
 function flattenShowroomSections(sections) {
   return sections.flatMap((section) => [section.heading, ...section.items]);
+}
+
+function pricePackageEndIndex(lines) {
+  const fallbackEnd = Math.min(lines.length, 10);
+  const stopIndex = lines.findIndex((line, index) => index > 0 && headingLikeLine(line));
+  if (stopIndex > 0) return stopIndex;
+
+  const packageEnd = lines.findIndex((line, index) => index > 0 && /6 of 12 maanden garantie/i.test(String(line || "")));
+  if (packageEnd >= 0) return packageEnd + 1;
+
+  return fallbackEnd;
 }
 
 function escapeXml(value) {
@@ -1007,6 +1031,30 @@ function twoColumnTextXml(lines, options = {}) {
     </w:tr>`;
 
   return tableXml(rowXml, columns, cellWidth, { width: tableWidth, before: 0, after: 0 });
+}
+
+function pricePackageBlockXml(lines, options = {}) {
+  if (!lines.length) return "";
+
+  const tableWidth = options.width || 9000;
+  const rowXml = `
+    <w:tr>
+      <w:tc>
+        <w:tcPr><w:tcW w:w="${tableWidth}" w:type="dxa"/><w:tcMar><w:top w:w="0" w:type="dxa"/><w:left w:w="80" w:type="dxa"/><w:bottom w:w="80" w:type="dxa"/><w:right w:w="120" w:type="dxa"/></w:tcMar></w:tcPr>
+        ${lines.map((text, index) => {
+          const paragraphOptions = paragraphOptionsForShowroomLine(text, options.size || 18, 0);
+          const isFirstLine = index === 0;
+          return paragraphXml(text, {
+            ...paragraphOptions,
+            before: isFirstLine ? 0 : Math.min(paragraphOptions.before || 0, 34),
+            after: Math.min(paragraphOptions.after || 0, 20),
+            line: 205
+          });
+        }).join("")}
+      </w:tc>
+    </w:tr>`;
+
+  return tableXml(rowXml, 1, tableWidth, { width: tableWidth, before: 0, after: 45 });
 }
 
 function keyValueColumnsXml(pairs, options = {}) {
