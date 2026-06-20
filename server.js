@@ -841,11 +841,11 @@ function buildShowroomDocx({ vehicle, detail, image }) {
     showroomContent.priceBlock.length ? horizontalRuleXml() : "",
     showroomContent.priceBlock.length ? blankParagraphXml({ size: 20, line: 180 }) : "",
     fullWidthProseBlockXml(showroomContent.proseItems, { size: 20, includeDivider: false }),
+    showroomContent.proseItems.length ? blankParagraphXml({ size: 20, line: 180 }) : "",
+    showroomContent.proseItems.length ? horizontalRuleXml() : "",
+    showroomContent.proseItems.length ? blankParagraphXml({ size: 20, line: 180 }) : "",
     layout.specs.length ? keyValueColumnsXml(layout.specs, { columns: textLength > 3800 ? 3 : 2, size: bodyFontSize, before: imageXml ? 45 : 0 }) : "",
-    showroomContent.hasSecondPageContent ? pageBreakXml() : "",
     twoColumnTextXml(showroomContent.optionItems, { size: 20, textLength }),
-    showroomContent.optionItems.length ? horizontalRuleXml() : "",
-    showroomContent.optionItems.length ? blankParagraphXml({ size: 20, line: 180 }) : "",
     twoColumnTextXml(showroomContent.detailItems, { size: 20, textLength }),
     sectPr
   ].join("");
