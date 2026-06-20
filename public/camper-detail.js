@@ -51,7 +51,7 @@
 
   previousLink.href = `/camper-detail.html?id=${encodeURIComponent(previousVehicle.id)}`;
   nextLink.href = `/camper-detail.html?id=${encodeURIComponent(nextVehicle.id)}`;
-  showroomkaartLink.href = `/showroomkaart.html?kenteken=${encodeURIComponent(vehicle.licensePlate || "")}`;
+  showroomkaartLink.href = showroomkaartHref(vehicle);
   photosLink.href = `/photos.html?id=${encodeURIComponent(vehicle.id)}`;
   positionLabel.textContent = `${selectedIndex + 1} / ${vehicles.length}`;
   pageTitle.textContent = vehicle.sourceId || vehicle.id;
@@ -299,4 +299,14 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function showroomkaartHref(vehicle) {
+  const licensePlate = normalizeLicensePlate(vehicle?.licensePlate);
+  if (!licensePlate) return "/showroomkaart.html";
+  return `/showroomkaart.html?kenteken=${encodeURIComponent(licensePlate)}`;
+}
+
+function normalizeLicensePlate(value) {
+  return String(value || "").replace(/[^a-z0-9]/gi, "").toUpperCase();
 }

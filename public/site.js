@@ -39,10 +39,10 @@
 
     grid.innerHTML = vehicles.map((vehicle, index) => {
       const photo = firstVehiclePhoto(vehicle);
-      const showroomUrl = `/showroomkaart.html?id=${encodeURIComponent(vehicle.id)}`;
+      const showroomUrl = showroomkaartHref(vehicle);
 
       return `
-        <article class="camper-card showroom-select-card" data-showroom-url="${escapeHtml(showroomUrl)}" data-kenteken="${escapeHtml(vehicle.licensePlate || "")}">
+        <article class="camper-card showroom-select-card" data-showroom-url="${escapeHtml(showroomUrl)}">
           ${photo
             ? `<img class="vehicle-photo" src="${escapeHtml(photo)}" alt="${escapeHtml(vehicle.title)}">`
             : `<div class="camper-image camper-image-${(index % 3) + 1}"></div>`}
@@ -62,16 +62,7 @@
       const card = event.target.closest(".showroom-select-card");
       if (!card) return;
 
-      const currentKenteken = card.dataset.kenteken || "";
-      const kenteken = currentKenteken || window.prompt("Vul het kenteken in voor deze showroomkaart:", "");
-      if (kenteken === null) return;
-
-      const url = new URL(card.dataset.showroomUrl, window.location.origin);
-      if (kenteken.trim()) {
-        url.searchParams.set("kenteken", kenteken.trim());
-      }
-
-      window.location.href = url.toString();
+      window.location.href = card.dataset.showroomUrl;
     });
   } catch {
     grid.innerHTML = `
@@ -92,6 +83,16 @@ function firstVehiclePhoto(vehicle) {
   const selected = photos.find((photo) => photo.selected) || photos[0];
   if (selected?.url) return selected.url;
   return vehicle.imageUrl || "";
+}
+
+function showroomkaartHref(vehicle) {
+  const licensePlate = normalizeLicensePlate(vehicle?.licensePlate);
+  if (licensePlate) return `/showroomkaart.html?kenteken=${encodeURIComponent(licensePlate)}`;
+  return `/showroomkaart.html?id=${encodeURIComponent(vehicle?.id || "")}`;
+}
+
+function normalizeLicensePlate(value) {
+  return String(value || "").replace(/[^a-z0-9]/gi, "").toUpperCase();
 }
 
 function escapeHtml(value) {

@@ -13,9 +13,7 @@
   const message = document.querySelector("#showroom-message");
   const params = new URLSearchParams(window.location.search);
 
-  if (params.get("kenteken")) {
-    input.value = params.get("kenteken");
-  }
+  await prefillLicensePlate(params);
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -38,7 +36,7 @@
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          licensePlate: input.value.trim()
+          licensePlate: normalizeLicensePlate(input.value)
         })
       });
 
@@ -64,7 +62,32 @@
       button.textContent = "Showroomkaart downloaden";
     }
   }
+
+  async function prefillLicensePlate(params) {
+    const kenteken = normalizeLicensePlate(params.get("kenteken"));
+    if (kenteken) {
+      input.value = kenteken;
+      return;
+    }
+
+    const vehicleId = params.get("id");
+    if (!vehicleId) return;
+
+    try {
+      const response = await fetch("/api/vehicles");
+      const data = await response.json();
+      const vehicle = (data.vehicles || []).find((item) => String(item.id) === vehicleId);
+      const licensePlate = normalizeLicensePlate(vehicle?.licensePlate);
+      if (licensePlate) input.value = licensePlate;
+    } catch {
+      message.textContent = "Kenteken kon niet automatisch worden ingevuld.";
+    }
+  }
 })();
+
+function normalizeLicensePlate(value) {
+  return String(value || "").replace(/[^a-z0-9]/gi, "").toUpperCase();
+}
 
 function getDownloadFileName(header) {
   const match = String(header || "").match(/filename="([^"]+)"/i);

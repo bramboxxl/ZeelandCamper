@@ -31,7 +31,7 @@
   }
 
   firstDetailLink.href = `/camper-detail.html?id=${encodeURIComponent(vehicles[0].id)}`;
-  firstShowroomkaartLink.href = "/showroomkaart.html";
+  firstShowroomkaartLink.href = showroomkaartHref(vehicles[0]);
   renderVehicles();
 
   list.addEventListener("change", async (event) => {
@@ -77,7 +77,7 @@
           <p>${escapeHtml(vehicle.notes || vehicle.additionalInfo || vehicle.description || "Geen opmerking")}</p>
           <small>Camper ${index + 1} van ${vehicles.length}</small>
         </a>
-        <a class="secondary-button small-button overview-action" href="/showroomkaart.html?kenteken=${encodeURIComponent(vehicle.licensePlate || "")}">Showroomkaart</a>
+        <a class="secondary-button small-button overview-action" href="${showroomkaartHref(vehicle)}">Showroomkaart</a>
         <label class="status-control">
           Status
           <select class="status-select">
@@ -88,6 +88,16 @@
     `).join("");
   }
 })();
+
+function showroomkaartHref(vehicle) {
+  const licensePlate = normalizeLicensePlate(vehicle?.licensePlate);
+  if (!licensePlate) return "/showroomkaart.html";
+  return `/showroomkaart.html?kenteken=${encodeURIComponent(licensePlate)}`;
+}
+
+function normalizeLicensePlate(value) {
+  return String(value || "").replace(/[^a-z0-9]/gi, "").toUpperCase();
+}
 
 function statusOptions(currentStatus) {
   return ["Op het oog", "intake en contract", "staat te koop", "verkocht", "gaat niet door"]

@@ -16,6 +16,9 @@ const SESSION_MAX_AGE = 1000 * 60 * 60 * 8;
 const VEHICLE_STATUSES = ["Op het oog", "intake en contract", "staat te koop", "verkocht", "gaat niet door"];
 const DATABASE_URL = process.env.DATABASE_URL;
 const MOBILOX_INVENTORY_URL = process.env.MOBILOX_INVENTORY_URL || "https://occasions.mobilox.nl/3293943-camper-zeeland";
+const MOBILOX_API_URL = process.env.MOBILOX_API_URL || "https://api.mobilox.nl/api/v2/";
+const MOBILOX_EMAIL = process.env.MOBILOX_EMAIL;
+const MOBILOX_PASSWORD = process.env.MOBILOX_PASSWORD;
 
 if (!DATABASE_URL && require.main === module) {
   throw new Error("DATABASE_URL is verplicht. Koppel een PostgreSQL database op Render.");
@@ -505,6 +508,152 @@ async function fetchImageBuffer(imageUrl) {
   };
 }
 
+function parseSetCookie(header) {
+  return [...String(header || "").matchAll(/(?:^|,\s*)(PHPSESSID|API_REMEMBER)=([^;,]+)/g)]
+    .map((match) => `${match[1]}=${match[2]}`)
+    .join("; ");
+}
+
+async function mobiloxLogin() {
+  if (!MOBILOX_EMAIL || !MOBILOX_PASSWORD) {
+    const error = new Error("MOBILOX_EMAIL en MOBILOX_PASSWORD zijn nodig voor de Mobilox Voorbeeld-tekst");
+    error.status = 500;
+    throw error;
+  }
+
+  const body = new URLSearchParams({
+    _username: MOBILOX_EMAIL,
+    _password: MOBILOX_PASSWORD,
+    _remember_me: "on"
+  });
+  const response = await fetch("https://api.mobilox.nl/login?redirect_to=https%3A%2F%2Fmembers.mobilox.nl%2F&redirect_failure=https%3A%2F%2Fmembers.mobilox.nl%2Flogin", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "User-Agent": "ZeelandCamper showroomkaart"
+    },
+    body,
+    redirect: "manual"
+  });
+  const cookie = parseSetCookie(response.headers.get("set-cookie"));
+
+  if (!cookie || response.status < 300 || response.status >= 400) {
+    const error = new Error("Inloggen bij Mobilox is mislukt");
+    error.status = 502;
+    throw error;
+  }
+
+  return cookie;
+}
+
+async function mobiloxFetchJson(cookie, pathName, options = {}) {
+  const base = MOBILOX_API_URL.replace(/\/+$/, "");
+  const urlToFetch = `${base}/${String(pathName).replace(/^\/+/, "")}`;
+  const response = await fetch(urlToFetch, {
+    method: options.method || "GET",
+    headers: {
+      Accept: "application/json",
+      Cookie: cookie,
+      "User-Agent": "ZeelandCamper showroomkaart",
+      ...(options.headers || {})
+    },
+    body: options.body
+  });
+  const text = await response.text();
+  let json = null;
+
+  try {
+    json = JSON.parse(text);
+  } catch {
+    json = null;
+  }
+
+  if (!response.ok) {
+    const error = new Error(json?.message || `Mobilox API gaf status ${response.status}`);
+    error.status = 502;
+    throw error;
+  }
+
+  return json;
+}
+
+function getMobiloxProductId(vehicle) {
+  const fromField = String(vehicle.mobiloxId || "").replace(/[^\d]/g, "");
+  if (fromField) return fromField;
+  const fromUrl = String(vehicle.mobiloxUrl || "").match(/\/(\d+)-[^/]+$/)?.[1] || "";
+  if (fromUrl) return fromUrl;
+  return "";
+}
+
+async function fetchMobiloxPreview(vehicle) {
+  const productId = getMobiloxProductId(vehicle);
+  if (!productId) {
+    const error = new Error("Geen Mobilox product-id gevonden voor deze camper");
+    error.status = 404;
+    throw error;
+  }
+
+  const cookie = await mobiloxLogin();
+  const product = await mobiloxFetchJson(cookie, `products/${encodeURIComponent(productId)}`);
+  const advertisement = product.advertisement;
+  const locale = advertisement?.locales?.[0] || "nl_NL";
+
+  if (!advertisement?.id) {
+    const error = new Error("Geen Mobilox advertentie gevonden voor deze camper");
+    error.status = 404;
+    throw error;
+  }
+
+  const query = new URLSearchParams({
+    title: advertisement.title?.[locale] || product.title || vehicle.title || "Camper",
+    content: advertisement.content?.[locale] || "",
+    defaultTextId: "",
+    locale
+  });
+  const preview = await mobiloxFetchJson(cookie, `ats/${encodeURIComponent(advertisement.id)}/preview?${query}`);
+
+  return {
+    title: preview.title || product.title || vehicle.title || "Camper",
+    contentHtml: preview.content || "",
+    text: normalizePreviewHtml(preview.content || ""),
+    imageUrl: product.picture || product.pictureOriginal || vehicle.imageUrl || ""
+  };
+}
+
+function normalizePreviewHtml(html) {
+  const withHeadingBreaks = String(html || "").replace(/<(strong|b)[^>]*>([\s\S]*?)<\/\1>/gi, (match, tag, inner) => {
+    const text = decodeHtml(String(inner || "").replace(/<[^>]+>/g, "")).trim();
+    const isHeading = text && text.length <= 42 && !/[0-9€:]/.test(text);
+    return isHeading ? `${inner}\n` : inner;
+  });
+
+  return withHeadingBreaks
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/h[1-6]>/gi, "\n")
+    .replace(/<\/li>/gi, "\n")
+    .replace(/<li[^>]*>/gi, "")
+    .replace(/<\/ul>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<\/div>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
+    .replace(/&nbsp;/g, " ")
+    .replace(/&euro;/g, "€")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&ndash;/g, "-")
+    .replace(/\u00a0/g, " ")
+    .replace(/([.!?])([A-ZÀ-Ý][a-zà-ÿ])/g, "$1\n$2")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function parseMobiloxDetail(html, fallbackVehicle) {
   const title = decodeHtml(
     String(html).match(/<h2[^>]*class=["'][^"']*main-title[^"']*["'][^>]*>([\s\S]*?)<\/h2>/i)?.[1]
@@ -582,24 +731,24 @@ async function createShowroomCardDocx(licensePlate) {
     error.status = 404;
     throw error;
   }
-  if (!vehicle.mobiloxUrl) {
-    const error = new Error("Deze camper heeft nog geen Mobilox advertentie gekoppeld");
-    error.status = 404;
-    throw error;
-  }
 
-  const html = await fetchText(vehicle.mobiloxUrl);
-  const detail = parseMobiloxDetail(html, vehicle);
-  if (!detail.description) {
-    const error = new Error("Geen advertentietekst gevonden op de Mobilox pagina");
+  const preview = await fetchMobiloxPreview(vehicle);
+  if (!preview.text) {
+    const error = new Error("Geen tekst gevonden in het Mobilox Voorbeeld-scherm");
     error.status = 422;
     throw error;
   }
 
-  const image = detail.imageUrl ? await fetchImageBuffer(detail.imageUrl) : null;
+  const image = preview.imageUrl ? await fetchImageBuffer(preview.imageUrl) : null;
   const docx = buildShowroomDocx({
     vehicle,
-    detail,
+    detail: {
+      title: preview.title,
+      price: "",
+      imageUrl: preview.imageUrl,
+      description: preview.text,
+      specs: []
+    },
     image
   });
   const fileBase = `${normalizeLicensePlateKey(vehicle.licensePlate || licensePlate)} showroomkaart`;
@@ -621,8 +770,7 @@ function buildShowroomDocx({ vehicle, detail, image }) {
   const imageExt = imageExtension(image?.contentType);
   const imageName = `showroom-photo${imageExt}`;
   const textLength = detail.description.length;
-  const bodyFontSize = textLength > 4200 ? 18 : textLength > 2800 ? 19 : 21;
-  const introFontSize = textLength > 4200 ? 20 : 22;
+  const bodyFontSize = textLength > 5200 ? 16 : textLength > 3800 ? 17 : 19;
   const paragraphs = splitDescription(detail.description);
 
   if (image?.buffer?.length) {
@@ -641,22 +789,17 @@ function buildShowroomDocx({ vehicle, detail, image }) {
   }
 
   const sectPr = extractSectPr(template.get(documentPath)?.data?.toString("utf8") || "") || defaultSectPr();
-  const imageXml = image?.buffer?.length ? imageDrawingXml(relId, 5486400, 3291840) : "";
-  const specs = detail.specs.length
-    ? detail.specs.map(([label, value]) => `${label}: ${value}`).join("   |   ")
-    : `Kenteken: ${vehicle.licensePlate || ""}`;
+  const imageXml = image?.buffer?.length ? imageDrawingXml(relId, 5486400, 2468880) : "";
 
   const bodyXml = [
     paragraphXml(detail.title, { size: 34, bold: true, color: "060250", after: 90 }),
-    paragraphXml(formatDisplayPrice(detail.price), { size: 30, bold: true, color: "E0573F", after: 140 }),
     imageXml,
-    paragraphXml(specs, { size: introFontSize, bold: true, color: "2F88B9", before: imageXml ? 180 : 0, after: 150 }),
     ...paragraphs.map((text, index) => paragraphXml(text, {
-      size: bodyFontSize,
-      bold: index < 2,
-      before: index === 0 ? 0 : 35,
-      after: 35,
-      line: textLength > 4200 ? 218 : 238
+      size: headingLikeLine(text) ? bodyFontSize + 2 : bodyFontSize,
+      bold: index === 0 || headingLikeLine(text),
+      before: index === 0 ? (imageXml ? 80 : 0) : headingLikeLine(text) ? 90 : 18,
+      after: headingLikeLine(text) ? 20 : 18,
+      line: textLength > 5200 ? 190 : 210
     })),
     sectPr
   ].join("");
@@ -674,7 +817,14 @@ function splitDescription(text) {
     .split(/\n+/)
     .map((line) => line.trim())
     .filter(Boolean)
-    .slice(0, 80);
+    .slice(0, 220);
+}
+
+function headingLikeLine(text) {
+  const value = String(text || "").trim();
+  if (!value || value.includes(":")) return false;
+  if (value.length > 42) return false;
+  return /^(Comfort|Exterieur|Infotainment|Interieur|Overige|Belangrijkste kenmerken|Comfortabel interieur|Extra uitrusting|Onderhoud & veiligheid|Bezichtiging & contact|Openingstijden)$/i.test(value);
 }
 
 function escapeXml(value) {
@@ -1473,7 +1623,9 @@ if (require.main === module) {
 
 module.exports = {
   buildShowroomDocx,
+  fetchMobiloxPreview,
   parseMobiloxDetail,
+  normalizeLicensePlateKey,
   normalizeShowroomText,
   readZipEntries
 };
