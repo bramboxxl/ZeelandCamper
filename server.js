@@ -1135,11 +1135,14 @@ function twoColumnTextXml(lines, options = {}) {
       ${columnLines.map((items) => `<w:tc>
         <w:tcPr><w:tcW w:w="${cellWidth}" w:type="dxa"/><w:tcMar><w:top w:w="0" w:type="dxa"/><w:left w:w="60" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="160" w:type="dxa"/></w:tcMar></w:tcPr>
         ${items.map((item, index) => {
-          const text = item.text || "";
+          const rawText = item.text || "";
+          const isHeading = headingLikeLine(rawText);
+          const useBullet = !isHeading;
+          const text = useBullet ? stripListMarker(rawText) : rawText;
           const paragraphOptions = paragraphOptionsForShowroomLine(text, options.size || 17, options.textLength || 0);
           return paragraphXml(text, {
             ...paragraphOptions,
-            bullet: Boolean(item.bullet),
+            bullet: useBullet,
             before: index === 0 ? 0 : Math.min(paragraphOptions.before || 0, 32),
             after: Math.min(paragraphOptions.after || 0, 18),
             line: Math.min(paragraphOptions.line || 190, 185)
@@ -1174,6 +1177,13 @@ function fullWidthProseBlockXml(lines, options = {}) {
     : blankParagraphXml({ size, line: 180 }) + horizontalRuleXml() + blankParagraphXml({ size, line: 180 });
 
   return divider + tableXml(rowXml, 1, tableWidth, { width: tableWidth, before: 0, after: 0 });
+}
+
+function stripListMarker(text) {
+  return String(text || "")
+    .trim()
+    .replace(/^[\s?•·\-–—*✓✔☑️✅🔎🔍🌈💪💎🚐👉📞🚙🚗📍🇦-🇿\p{Emoji_Presentation}\p{Extended_Pictographic}]+/u, "")
+    .trim();
 }
 
 function pricePackageBlockXml(lines, options = {}) {
