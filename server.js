@@ -808,7 +808,7 @@ function buildShowroomDocx({ vehicle, detail, image }) {
   const imageName = `showroom-photo${imageExt}`;
   const cleanedDescription = removeShowroomContactText(detail.description);
   const textLength = cleanedDescription.length;
-  const bodyFontSize = textLength > 5200 ? 20 : textLength > 3800 ? 21 : 22;
+  const bodyFontSize = textLength > 5200 ? 18 : textLength > 3800 ? 19 : 20;
   const layout = showroomLayout(detail.title, cleanedDescription);
 
   if (image?.buffer?.length) {
@@ -827,14 +827,14 @@ function buildShowroomDocx({ vehicle, detail, image }) {
   }
 
   const originalDocumentXml = ensureDrawingNamespaces(template.get(documentPath)?.data?.toString("utf8") || documentXml(defaultSectPr()));
-  const sectPr = extractSectPr(originalDocumentXml) || defaultSectPr();
-  const imageSize = image?.buffer?.length ? fitImageSize(image.buffer, 5486400, 2350000) : null;
+  const sectPr = showroomSectPr(extractSectPr(originalDocumentXml) || defaultSectPr());
+  const imageSize = image?.buffer?.length ? fitImageSize(image.buffer, 4550000, 1700000) : null;
   const imageXml = imageSize ? imageDrawingXml(relId, imageSize.cx, imageSize.cy) : "";
 
   const bodyXml = [
-    paragraphXml(detail.title, { size: 34, bold: true, color: "060250", after: 90 }),
+    paragraphXml(detail.title, { size: 30, bold: true, color: "060250", after: 70, line: 300 }),
     imageXml,
-    layout.specs.length ? keyValueColumnsXml(layout.specs, { columns: 2, size: bodyFontSize, before: imageXml ? 70 : 0 }) : "",
+    layout.specs.length ? keyValueColumnsXml(layout.specs, { columns: 2, size: bodyFontSize, before: imageXml ? 45 : 0 }) : "",
     layout.sections.length ? sectionColumnsXml(layout.sections, { columns: layout.sections.length >= 6 ? 3 : 2, size: bodyFontSize }) : "",
     ...layout.remaining.map((text) => paragraphXml(text, paragraphOptionsForShowroomLine(text, bodyFontSize, textLength))),
     sectPr
@@ -923,9 +923,9 @@ function paragraphOptionsForShowroomLine(text, bodyFontSize, textLength) {
     size: isPrice ? bodyFontSize + 2 : bodyFontSize,
     bold: isHeading || isPrice,
     color: isPrice ? "060250" : "",
-    before: isHeading ? 90 : isPrice ? 120 : isPackageIntro ? 30 : isPackageItem ? 6 : 20,
-    after: isHeading ? 24 : isPrice ? 36 : isPackageIntro ? 42 : isPackageItem ? 10 : 20,
-    line: textLength > 5200 ? 210 : 230
+    before: isHeading ? 62 : isPrice ? 90 : isPackageIntro ? 22 : isPackageItem ? 4 : 12,
+    after: isHeading ? 18 : isPrice ? 30 : isPackageIntro ? 30 : isPackageItem ? 6 : 12,
+    line: textLength > 5200 ? 190 : 205
   };
 }
 
@@ -964,12 +964,12 @@ function keyValueColumnsXml(pairs, options = {}) {
         const pair = row[index];
         return `<w:tc>
           <w:tcPr><w:tcW w:w="${cellWidth}" w:type="dxa"/><w:tcMar><w:top w:w="20" w:type="dxa"/><w:left w:w="60" w:type="dxa"/><w:bottom w:w="20" w:type="dxa"/><w:right w:w="120" w:type="dxa"/></w:tcMar></w:tcPr>
-          ${pair ? paragraphXml(`${pair[0]}: ${pair[1]}`, { size: options.size || 18, after: 0, line: 230 }) : paragraphXml("", { size: options.size || 18, after: 0, line: 230 })}
+          ${pair ? paragraphXml(`${pair[0]}: ${pair[1]}`, { size: options.size || 18, after: 0, line: 205 }) : paragraphXml("", { size: options.size || 18, after: 0, line: 205 })}
         </w:tc>`;
       }).join("")}
     </w:tr>`).join("");
 
-  return tableXml(rows, columns, cellWidth, { width: tableWidth, before: options.before || 0, after: 90 });
+  return tableXml(rows, columns, cellWidth, { width: tableWidth, before: options.before || 0, after: 60 });
 }
 
 function sectionColumnsXml(sections, options = {}) {
@@ -983,14 +983,14 @@ function sectionColumnsXml(sections, options = {}) {
         return `<w:tc>
           <w:tcPr><w:tcW w:w="${cellWidth}" w:type="dxa"/><w:tcMar><w:top w:w="40" w:type="dxa"/><w:left w:w="60" w:type="dxa"/><w:bottom w:w="40" w:type="dxa"/><w:right w:w="160" w:type="dxa"/></w:tcMar></w:tcPr>
           ${section ? [
-            paragraphXml(section.heading, { size: (options.size || 18) + 2, bold: true, after: 26, line: 220 }),
-            ...section.items.map((item) => paragraphXml(item, { size: options.size || 18, after: 0, line: 225 }))
-          ].join("") : paragraphXml("", { size: options.size || 18, after: 0, line: 225 })}
+            paragraphXml(section.heading, { size: (options.size || 18) + 2, bold: true, after: 18, line: 205 }),
+            ...section.items.map((item) => paragraphXml(item, { size: options.size || 18, after: 0, line: 200 }))
+          ].join("") : paragraphXml("", { size: options.size || 18, after: 0, line: 200 })}
         </w:tc>`;
       }).join("")}
     </w:tr>`).join("");
 
-  return tableXml(rows, columns, cellWidth, { width: tableWidth, before: 40, after: 100 });
+  return tableXml(rows, columns, cellWidth, { width: tableWidth, before: 28, after: 65 });
 }
 
 function tableXml(rowsXml, columns, cellWidth, options = {}) {
@@ -1100,6 +1100,20 @@ function imageDimensions(buffer) {
 
 function extractSectPr(documentXmlText) {
   return documentXmlText.match(/<w:sectPr[\s\S]*<\/w:sectPr>/)?.[0] || "";
+}
+
+function showroomSectPr(sectPr) {
+  const topMargin = 2550;
+  const bottomMargin = 1050;
+  const marginMatch = String(sectPr || "").match(/<w:pgMar\b[^>]*\/>/);
+  if (!marginMatch) {
+    return String(sectPr || "").replace("</w:sectPr>", `<w:pgMar w:top="${topMargin}" w:right="1417" w:bottom="${bottomMargin}" w:left="1417" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr>`);
+  }
+
+  const nextMargin = marginMatch[0]
+    .replace(/\sw:top="[^"]*"/, ` w:top="${topMargin}"`)
+    .replace(/\sw:bottom="[^"]*"/, ` w:bottom="${bottomMargin}"`);
+  return String(sectPr || "").replace(marginMatch[0], nextMargin);
 }
 
 function replaceDocumentBodyContent(originalDocumentXml, bodyXml) {
