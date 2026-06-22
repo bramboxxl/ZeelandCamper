@@ -21,6 +21,7 @@
   const previousLink = document.querySelector("#previous-vehicle");
   const nextLink = document.querySelector("#next-vehicle");
   const showroomkaartLink = document.querySelector("#showroomkaart-link");
+  const zeelandnetButton = document.querySelector("#zeelandnet-button");
   const photosLink = document.querySelector("#photos-link");
   const todoList = document.querySelector("#todo-list");
   const todosField = document.querySelector("#todos-field");
@@ -77,6 +78,13 @@
       vehicleId: vehicle.id || "",
       licensePlate: vehicle.licensePlate || ""
     }, showroomkaartLink);
+  });
+
+  zeelandnetButton.addEventListener("click", async () => {
+    openZeelandnetDraft({
+      vehicleId: vehicle.id || "",
+      licensePlate: vehicle.licensePlate || ""
+    });
   });
 
   rdwLookupButton.addEventListener("click", async () => {
@@ -351,6 +359,13 @@ async function downloadShowroomCard(payload, button) {
     button.removeAttribute("aria-disabled");
     button.textContent = originalText;
   }
+}
+
+function openZeelandnetDraft(payload) {
+  const params = new URLSearchParams();
+  if (payload.vehicleId) params.set("id", payload.vehicleId);
+  if (payload.licensePlate) params.set("kenteken", normalizeLicensePlate(payload.licensePlate));
+  window.location.href = `/zeelandnet-ad.html?${params}`;
 }
 
 function getDownloadFileName(header) {

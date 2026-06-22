@@ -19,6 +19,10 @@ const MOBILOX_INVENTORY_URL = process.env.MOBILOX_INVENTORY_URL || "https://occa
 const MOBILOX_API_URL = process.env.MOBILOX_API_URL || "https://api.mobilox.nl/api/v2/";
 const MOBILOX_EMAIL = process.env.MOBILOX_EMAIL;
 const MOBILOX_PASSWORD = process.env.MOBILOX_PASSWORD;
+const ZEELANDNET_USERNAME = process.env.ZEELANDNET_USERNAME;
+const ZEELANDNET_PASSWORD = process.env.ZEELANDNET_PASSWORD;
+const ZEELANDNET_LOGIN_TYPE = process.env.ZEELANDNET_LOGIN_TYPE || "gast";
+const ZEELANDNET_WEBSITE_URL = process.env.ZEELANDNET_WEBSITE_URL || "https://www.zeelandcamper.nl/campers-te-koop/";
 
 if (!DATABASE_URL && require.main === module) {
   throw new Error("DATABASE_URL is verplicht. Koppel een PostgreSQL database op Render.");
@@ -515,6 +519,25 @@ function parseSetCookie(header) {
     .join("; ");
 }
 
+function readSetCookieHeaders(headers) {
+  if (typeof headers.getSetCookie === "function") return headers.getSetCookie();
+  const header = headers.get("set-cookie");
+  if (!header) return [];
+  return header.split(/,(?=\s*[^;,=\s]+=[^;,]+)/g);
+}
+
+function appendCookieJar(jar, headers) {
+  for (const cookie of readSetCookieHeaders(headers)) {
+    const pair = String(cookie || "").split(";")[0].trim();
+    const separator = pair.indexOf("=");
+    if (separator > 0) jar.set(pair.slice(0, separator), pair.slice(separator + 1));
+  }
+}
+
+function formatCookieJar(jar) {
+  return [...jar].map(([key, value]) => `${key}=${value}`).join("; ");
+}
+
 async function mobiloxLogin(credentials = {}) {
   credentials = credentials || {};
   const email = String(credentials.email || MOBILOX_EMAIL || "").trim();
@@ -550,6 +573,81 @@ async function mobiloxLogin(credentials = {}) {
   }
 
   return cookie;
+}
+
+async function testZeelandnetLogin(credentials = {}) {
+  const username = String(credentials.username || ZEELANDNET_USERNAME || "").trim();
+  const password = String(credentials.password || ZEELANDNET_PASSWORD || "");
+
+  if (!username || !password) {
+    const error = new Error("ZEELANDNET_USERNAME en ZEELANDNET_PASSWORD zijn nodig voor de ZeelandNet login-test");
+    error.code = "missing_zeelandnet_credentials";
+    error.status = 500;
+    throw error;
+  }
+
+  const from = "https://www.zeelandnet.nl/prikbord";
+  const loginUrl = `https://www.zeelandnet.nl/login/index.php?from=${encodeURIComponent(from)}`;
+  const cookieJar = new Map();
+  const firstResponse = await fetch(loginUrl, {
+    headers: {
+      "User-Agent": "ZeelandCamper ZeelandNet login-test"
+    },
+    redirect: "manual"
+  });
+  appendCookieJar(cookieJar, firstResponse.headers);
+
+  const body = new URLSearchParams({
+    action: "login",
+    from,
+    login_type: ZEELANDNET_LOGIN_TYPE,
+    login_name: username,
+    login_pass: password
+  });
+  const loginResponse = await fetch("https://www.zeelandnet.nl/login/index.php", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Cookie: formatCookieJar(cookieJar),
+      Referer: loginUrl,
+      "User-Agent": "ZeelandCamper ZeelandNet login-test"
+    },
+    body,
+    redirect: "manual"
+  });
+  appendCookieJar(cookieJar, loginResponse.headers);
+
+  const location = loginResponse.headers.get("location") || "";
+  const sessionCookie = formatCookieJar(cookieJar);
+  const checkResponse = await fetch("https://www.zeelandnet.nl/prikbord/mijn-prikbord", {
+    headers: {
+      Cookie: sessionCookie,
+      "User-Agent": "ZeelandCamper ZeelandNet login-test"
+    },
+    redirect: "manual"
+  });
+  const checkText = await checkResponse.text();
+  const loggedIn = loginResponse.status >= 300
+    && loginResponse.status < 400
+    && !/login\/index\.php/i.test(location)
+    && !/Log in en doe meer op ZeelandNet/i.test(checkText);
+
+  if (!loggedIn) {
+    const error = new Error("Inloggen bij ZeelandNet is mislukt. Controleer gebruikersnaam, wachtwoord en accounttype.");
+    error.status = 502;
+    error.details = {
+      loginStatus: loginResponse.status,
+      checkStatus: checkResponse.status
+    };
+    throw error;
+  }
+
+  return {
+    ok: true,
+    loggedIn: true,
+    loginStatus: loginResponse.status,
+    checkStatus: checkResponse.status
+  };
 }
 
 async function mobiloxFetchJson(cookie, pathName, options = {}) {
@@ -630,6 +728,247 @@ async function fetchMobiloxPreview(vehicle, credentials = {}) {
     contentHtml: preview.content || "",
     text: normalizePreviewHtml(preview.content || ""),
     imageUrl: product.picture || product.pictureOriginal || vehicle.imageUrl || ""
+  };
+}
+
+async function fetchMobiloxAdvertisementData(vehicle, credentials = {}) {
+  const productId = getMobiloxProductId(vehicle);
+  if (!productId) {
+    const error = new Error("Geen Mobilox product-id gevonden voor deze camper");
+    error.status = 404;
+    throw error;
+  }
+
+  const cookie = await mobiloxLogin(credentials);
+  const product = await mobiloxFetchJson(cookie, `products/${encodeURIComponent(productId)}`);
+  if (!product || typeof product !== "object") {
+    const error = new Error("Mobilox voertuig kon niet worden opgehaald. Controleer de Mobilox inlog.");
+    error.status = 502;
+    throw error;
+  }
+
+  const advertisement = product.advertisement;
+  const locale = advertisement?.locales?.[0] || "nl_NL";
+  if (!advertisement?.id) {
+    const error = new Error("Geen Mobilox advertentie gevonden voor deze camper");
+    error.status = 404;
+    throw error;
+  }
+
+  const query = new URLSearchParams({
+    title: advertisement.title?.[locale] || product.title || vehicle.title || "Camper",
+    content: advertisement.content?.[locale] || "",
+    defaultTextId: "",
+    locale
+  });
+  const preview = await mobiloxFetchJson(cookie, `ats/${encodeURIComponent(advertisement.id)}/preview?${query}`);
+
+  return {
+    product,
+    preview: {
+      title: preview.title || product.title || vehicle.title || "Camper",
+      contentHtml: preview.content || "",
+      text: normalizePreviewHtml(preview.content || "")
+    }
+  };
+}
+
+function firstText(...values) {
+  for (const value of values) {
+    const text = String(value || "").trim();
+    if (text) return text;
+  }
+  return "";
+}
+
+function findNestedText(value, keyPatterns) {
+  const seen = new Set();
+  const queue = [value];
+
+  while (queue.length) {
+    const current = queue.shift();
+    if (!current || typeof current !== "object" || seen.has(current)) continue;
+    seen.add(current);
+
+    for (const [key, nestedValue] of Object.entries(current)) {
+      if (keyPatterns.some((pattern) => pattern.test(key)) && typeof nestedValue !== "object") {
+        const text = String(nestedValue || "").trim();
+        if (text) return text;
+      }
+      if (nestedValue && typeof nestedValue === "object") queue.push(nestedValue);
+    }
+  }
+
+  return "";
+}
+
+function splitBrandAndModel(title, product, vehicle) {
+  const brand = firstText(
+    vehicle.brand,
+    product.brand?.name,
+    product.brand,
+    product.make,
+    product.manufacturer?.name,
+    product.manufacturer,
+    findNestedText(product, [/^brand$/i, /^make$/i, /manufacturer/i, /merk/i])
+  );
+  const model = firstText(
+    vehicle.model,
+    product.model?.name,
+    product.model,
+    product.tradeName,
+    product.trade_name,
+    product.commercialName,
+    product.commercial_name,
+    product.version,
+    product.serie,
+    product.series,
+    product.type,
+    findNestedText(product, [/^model$/i, /modelName/i, /trade.*name/i, /commercial.*name/i, /^version$/i, /^serie/i])
+  );
+  const cleanedModel = cleanModelName(model, brand, title);
+
+  if (brand || cleanedModel) {
+    return {
+      brand,
+      model: cleanedModel || cleanModelName(title, brand, title)
+    };
+  }
+
+  const words = String(title || "").trim().split(/\s+/);
+  return {
+    brand: words[0] || "",
+    model: cleanModelName(words.slice(1).join(" "), words[0] || "", title)
+  };
+}
+
+function cleanModelName(value, brand, fallbackTitle = "") {
+  let text = String(value || "").replace(/\s+/g, " ").trim();
+  if (!text && fallbackTitle) text = String(fallbackTitle || "").replace(/\s+/g, " ").trim();
+  if (brand) text = text.replace(new RegExp(`^${escapeRegExp(brand)}\\s*`, "i"), "").trim();
+  return text
+    .replace(/\b(?:uit|bouwjaar)\s+(?:19|20)\d{2}\b/gi, "")
+    .replace(/\b(?:19|20)\d{2}\b/g, "")
+    .replace(/\s*[-|,]\s*$/, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+function escapeRegExp(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function collectMobiloxPhotoUrls(product, vehicle) {
+  const urls = [];
+  const seenObjects = new Set();
+  const seenUrls = new Set();
+  const addUrl = (value, force = false) => {
+    const text = String(value || "").trim();
+    if (!force && !/\.(?:jpe?g|png|webp)(?:[?#].*)?$/i.test(text) && !/\/image\//i.test(text)) return;
+    if (!/^https?:\/\//i.test(text) && !/^[/.]/.test(text)) return;
+    const url = absoluteMobiloxUrl(text);
+    if (!seenUrls.has(url)) {
+      seenUrls.add(url);
+      urls.push(url);
+    }
+  };
+  const walk = (value, key = "") => {
+    if (!value) return;
+    if (typeof value === "string") {
+      const isImageKey = /picture|photo|image|media|url|uri|src/i.test(key);
+      if (isImageKey || /^https?:\/\//i.test(value)) addUrl(value, isImageKey);
+      return;
+    }
+    if (typeof value !== "object" || seenObjects.has(value)) return;
+    seenObjects.add(value);
+
+    for (const [nestedKey, nestedValue] of Object.entries(value)) {
+      walk(nestedValue, nestedKey);
+    }
+  };
+
+  [
+    product.pictureOriginal,
+    product.picture,
+    product.imageUrl,
+    vehicle.imageUrl
+  ].forEach((url) => addUrl(url, true));
+  walk(product);
+
+  return urls.slice(0, 15);
+}
+
+function extractSleepingPlaces(product, text) {
+  return firstText(
+    product.sleepingPlaces,
+    product.sleeping_places,
+    product.berths,
+    findNestedText(product, [/sleep/i, /slaap/i, /berth/i]),
+    String(text || "").match(/(?:Slaapplaatsen|Aantal slaapplaatsen)\s*:?\s*(\d+)/i)?.[1]
+  ).replace(/[^\d]/g, "");
+}
+
+function findNestedPrice(product) {
+  const preferred = findNestedText(product, [/actie.*prijs/i, /action.*price/i, /sale.*price/i, /special.*price/i]);
+  const fallback = findNestedText(product, [/^price$/i, /prijs/i, /salesPrice/i]);
+  return firstText(preferred, fallback).replace(/[^\d]/g, "");
+}
+
+function buildZeelandnetTitle(title, year) {
+  const base = String(title || "Camper").replace(/\s+/g, " ").trim();
+  const suffix = `${year || "jaar"} apk, beurt en garantie mogelijk`;
+  const maxBaseLength = Math.max(10, 75 - suffix.length - 3);
+  return `${base.slice(0, maxBaseLength).trim()} | ${suffix}`.slice(0, 75);
+}
+
+async function createZeelandnetDraft(input) {
+  const vehicle = await findVehicleForShowroom(input);
+  if (!vehicle) {
+    const error = new Error("Geen camper gevonden voor Zeelandnet");
+    error.status = 404;
+    throw error;
+  }
+
+  const { product, preview } = await fetchMobiloxAdvertisementData(vehicle);
+  const title = preview.title || product.title || vehicle.title || "Camper";
+  const year = firstText(vehicle.year, String(preview.text || title).match(/\b(20\d{2}|19\d{2})\b/)?.[1]);
+  const brandModel = splitBrandAndModel(title, product, vehicle);
+  const price = firstText(product.actionPrice, product.action_price, product.price, product.salesPrice, findNestedPrice(product), vehicle.price).replace(/[^\d]/g, "");
+  const sleepingPlaces = extractSleepingPlaces(product, preview.text);
+  const photos = collectMobiloxPhotoUrls(product, vehicle);
+
+  return {
+    ok: true,
+    vehicleId: vehicle.id,
+    mobiloxId: getMobiloxProductId(vehicle),
+    zeelandnetUrl: "https://www.zeelandnet.nl/prikbord/advertentie-plaatsen",
+    category: {
+      group: "Caravans en Campers",
+      subgroup: "Campers"
+    },
+    title: buildZeelandnetTitle(`${brandModel.brand} ${brandModel.model}`.trim() || title, year),
+    type: "Aangeboden",
+    condition: "Gebruikt",
+    priceType: "Vraagprijs",
+    price,
+    allowBids: false,
+    websiteUrl: ZEELANDNET_WEBSITE_URL,
+    address: {
+      place: "Middelburg",
+      outsideZeeland: false,
+      showSalesAddress: true,
+      street: "Arnesteinweg",
+      houseNumber: "39"
+    },
+    camper: {
+      type: brandModel.model || title,
+      brand: brandModel.brand,
+      model: brandModel.model,
+      sleepingPlaces,
+      fuel: "Diesel"
+    },
+    text: preview.text,
+    photos
   };
 }
 
@@ -1953,6 +2292,44 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  if (request.method === "POST" && url.pathname === "/api/zeelandnet/login-test") {
+    if (!requireSession(request, response)) return;
+
+    try {
+      const result = await testZeelandnetLogin();
+      sendJson(response, 200, result);
+    } catch (error) {
+      sendJson(response, error.status || 500, {
+        ok: false,
+        code: error.code || "",
+        message: error.message || "ZeelandNet login-test mislukt",
+        details: error.details || undefined
+      });
+    }
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/zeelandnet/draft") {
+    if (!requireSession(request, response)) return;
+
+    try {
+      const body = await readBody(request);
+      const payload = JSON.parse(body || "{}");
+      const result = await createZeelandnetDraft({
+        licensePlate: payload.licensePlate,
+        vehicleId: payload.vehicleId
+      });
+      sendJson(response, 200, result);
+    } catch (error) {
+      sendJson(response, error.status || 500, {
+        ok: false,
+        code: error.code || "",
+        message: error.message || "Zeelandnet concept kon niet worden gemaakt"
+      });
+    }
+    return;
+  }
+
   if (request.method === "GET" && lookupMatch) {
     if (!requireSession(request, response)) return;
 
@@ -2123,7 +2500,7 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
-  const protectedPages = ["/dashboard", "/dashboard.html", "/camper-detail", "/camper-detail.html", "/todos", "/todos.html", "/new-camper", "/new-camper.html", "/op-het-oog", "/op-het-oog.html", "/photos", "/photos.html", "/showroomkaart", "/showroomkaart.html"];
+  const protectedPages = ["/dashboard", "/dashboard.html", "/camper-detail", "/camper-detail.html", "/todos", "/todos.html", "/new-camper", "/new-camper.html", "/op-het-oog", "/op-het-oog.html", "/photos", "/photos.html", "/showroomkaart", "/showroomkaart.html", "/zeelandnet-ad", "/zeelandnet-ad.html"];
   if (protectedPages.includes(url.pathname) && !getSession(request)) {
     response.writeHead(302, { Location: "/login.html" });
     response.end();
@@ -2134,6 +2511,7 @@ const server = http.createServer(async (request, response) => {
     "/dashboard": "/dashboard.html",
     "/camper-detail": "/camper-detail.html",
     "/showroomkaart": "/showroomkaart.html",
+    "/zeelandnet-ad": "/zeelandnet-ad.html",
     "/todos": "/todos.html",
     "/new-camper": "/new-camper.html",
     "/op-het-oog": "/op-het-oog.html",

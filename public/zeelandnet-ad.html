@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="nl">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Zeelandnet advertentie | ZeelandCamper</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script defer src="/zeelandnet-ad.js"></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="ZeelandCamper home">
+        <img src="/assets/logo-zeelandcamper-web.jpg" alt="ZeelandCamper">
+      </a>
+      <nav class="top-nav" aria-label="Hoofdnavigatie">
+        <a href="/dashboard">Dashboard</a>
+        <button class="nav-button" id="logout-button" type="button">Uitloggen</button>
+      </nav>
+    </header>
+
+    <main class="dashboard-shell">
+      <section class="dashboard-hero">
+        <p class="eyebrow">Zeelandnet</p>
+        <h1>Advertentie concept</h1>
+        <p id="zeelandnet-status">Mobilox data laden...</p>
+      </section>
+
+      <section class="choice-bar" aria-label="Keuzes">
+        <a class="secondary-button small-button" href="/dashboard">Overzicht</a>
+        <a class="secondary-button small-button" id="detail-link" href="/dashboard">Camperdetails</a>
+        <a class="secondary-button small-button" href="https://www.zeelandnet.nl/prikbord/advertentie-plaatsen" target="_blank" rel="noreferrer">Open Zeelandnet</a>
+      </section>
+
+      <section class="overview-panel zeelandnet-panel" aria-labelledby="draft-title">
+        <div class="manager-header">
+          <div>
+            <p class="eyebrow">Controle voor plaatsen</p>
+            <h2 id="draft-title">Velden</h2>
+          </div>
+          <span class="count-pill" id="photo-count">0</span>
+        </div>
+        <div class="zeelandnet-grid" id="draft-content"></div>
+      </section>
+    </main>
+  </body>
+</html>

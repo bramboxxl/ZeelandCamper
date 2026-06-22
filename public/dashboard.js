@@ -16,6 +16,7 @@
   const count = document.querySelector("#vehicle-count");
   const firstDetailLink = document.querySelector("#first-detail-link");
   const firstShowroomkaartLink = document.querySelector("#first-showroomkaart-link");
+  const firstZeelandnetButton = document.querySelector("#first-zeelandnet-button");
 
   const vehiclesResponse = await fetch("/api/vehicles");
   const data = await vehiclesResponse.json();
@@ -28,6 +29,7 @@
     list.innerHTML = `<p class="empty-state">Nog geen campers in de database.</p>`;
     firstDetailLink.setAttribute("aria-disabled", "true");
     firstShowroomkaartLink.setAttribute("aria-disabled", "true");
+    firstZeelandnetButton.disabled = true;
     return;
   }
 
@@ -35,6 +37,8 @@
   firstShowroomkaartLink.href = "#";
   firstShowroomkaartLink.dataset.vehicleId = vehicles[0].id || "";
   firstShowroomkaartLink.dataset.licensePlate = normalizeLicensePlate(vehicles[0].licensePlate);
+  firstZeelandnetButton.dataset.vehicleId = vehicles[0].id || "";
+  firstZeelandnetButton.dataset.licensePlate = normalizeLicensePlate(vehicles[0].licensePlate);
   renderVehicles();
 
   firstShowroomkaartLink.addEventListener("click", async (event) => {
@@ -43,6 +47,13 @@
       vehicleId: firstShowroomkaartLink.dataset.vehicleId || "",
       licensePlate: firstShowroomkaartLink.dataset.licensePlate || ""
     }, firstShowroomkaartLink);
+  });
+
+  firstZeelandnetButton.addEventListener("click", async () => {
+    openZeelandnetDraft({
+      vehicleId: firstZeelandnetButton.dataset.vehicleId || "",
+      licensePlate: firstZeelandnetButton.dataset.licensePlate || ""
+    });
   });
 
   list.addEventListener("change", async (event) => {
@@ -89,7 +100,10 @@
           <p>${escapeHtml(vehicle.notes || vehicle.additionalInfo || vehicle.description || "Geen opmerking")}</p>
           <small>Camper ${index + 1} van ${vehicles.length}</small>
         </a>
-        <button class="secondary-button small-button overview-action showroomkaart-button" type="button" data-vehicle-id="${escapeHtml(vehicle.id || "")}" data-license-plate="${escapeHtml(normalizeLicensePlate(vehicle.licensePlate))}">Showroomkaart</button>
+        <div class="overview-actions">
+          <button class="secondary-button small-button overview-action showroomkaart-button" type="button" data-vehicle-id="${escapeHtml(vehicle.id || "")}" data-license-plate="${escapeHtml(normalizeLicensePlate(vehicle.licensePlate))}">Showroomkaart</button>
+          <button class="secondary-button small-button overview-action zeelandnet-button" type="button" data-vehicle-id="${escapeHtml(vehicle.id || "")}" data-license-plate="${escapeHtml(normalizeLicensePlate(vehicle.licensePlate))}">Zeelandnet</button>
+        </div>
         <label class="status-control">
           Status
           <select class="status-select">
@@ -123,13 +137,22 @@
   }
 
   list.addEventListener("click", async (event) => {
-    const button = event.target.closest(".showroomkaart-button");
-    if (!button) return;
+    const showroomButton = event.target.closest(".showroomkaart-button");
+    if (showroomButton) {
+      await downloadShowroomCard({
+        vehicleId: showroomButton.dataset.vehicleId || "",
+        licensePlate: showroomButton.dataset.licensePlate || ""
+      }, showroomButton);
+      return;
+    }
 
-    await downloadShowroomCard({
-      vehicleId: button.dataset.vehicleId || "",
-      licensePlate: button.dataset.licensePlate || ""
-    }, button);
+    const zeelandnetButton = event.target.closest(".zeelandnet-button");
+    if (zeelandnetButton) {
+      openZeelandnetDraft({
+        vehicleId: zeelandnetButton.dataset.vehicleId || "",
+        licensePlate: zeelandnetButton.dataset.licensePlate || ""
+      });
+    }
   });
 })();
 
@@ -175,6 +198,13 @@ async function downloadShowroomCard(payload, button) {
     button.disabled = false;
     button.textContent = originalText;
   }
+}
+
+function openZeelandnetDraft(payload) {
+  const params = new URLSearchParams();
+  if (payload.vehicleId) params.set("id", payload.vehicleId);
+  if (payload.licensePlate) params.set("kenteken", normalizeLicensePlate(payload.licensePlate));
+  window.location.href = `/zeelandnet-ad.html?${params}`;
 }
 
 function getDownloadFileName(header) {

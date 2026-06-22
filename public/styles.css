@@ -552,6 +552,14 @@ h3 {
   font-weight: 800;
 }
 
+.overview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-self: end;
+  margin-top: 8px;
+}
+
 .camper-list-button {
   display: grid;
   gap: 6px;
@@ -793,9 +801,97 @@ h3 {
 }
 
 .overview-action {
-  align-self: end;
   justify-self: start;
-  margin-top: 8px;
+}
+
+.zeelandnet-panel {
+  overflow: hidden;
+}
+
+.zeelandnet-grid,
+.zeelandnet-fields,
+.zeelandnet-text,
+.zeelandnet-photos {
+  display: grid;
+  gap: 14px;
+}
+
+.zeelandnet-grid {
+  padding: 24px;
+}
+
+.zeelandnet-fields {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.zeelandnet-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 12px;
+  align-items: center;
+  padding: 14px;
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.zeelandnet-field span {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.zeelandnet-field strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--deep-navy);
+}
+
+.zeelandnet-section-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.zeelandnet-section-header h3 {
+  margin: 0;
+}
+
+.zeelandnet-text textarea {
+  width: 100%;
+  min-height: 360px;
+  padding: 16px;
+  color: var(--ink);
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: inherit;
+  resize: vertical;
+}
+
+.zeelandnet-photo-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.zeelandnet-photo {
+  display: grid;
+  gap: 8px;
+  color: var(--deep-navy);
+  font-weight: 800;
+}
+
+.zeelandnet-photo img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid var(--line);
 }
 
 .upload-button {
@@ -1077,7 +1173,9 @@ h3 {
   .overview-grid,
   .rdw-highlights,
   .rdw-grid,
-  .photo-layout {
+  .photo-layout,
+  .zeelandnet-fields,
+  .zeelandnet-photo-grid {
     grid-template-columns: 1fr;
   }
 
@@ -1143,6 +1241,14 @@ h3 {
 
   .todo-row {
     align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+
+  .zeelandnet-grid {
+    padding: 16px;
+  }
+
+  .zeelandnet-field {
     grid-template-columns: 1fr;
   }
 
